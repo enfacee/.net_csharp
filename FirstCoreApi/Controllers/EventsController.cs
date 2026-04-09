@@ -50,7 +50,7 @@ public class EventsController : ControllerBase
     [HttpDelete("{id}")]
     public ActionResult Delete(int id)
     {
-        if (_eventService.Remove(id))
+        if (!_eventService.Remove(id))
             return NotFound();
         return Ok();
     }
