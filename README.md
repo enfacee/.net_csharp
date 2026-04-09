@@ -1,14 +1,14 @@
-# .net_csharp
+﻿# .net_csharp
 
 ## Быстрый запуск
 
 1. Откройте терминал в корне репозитория (папка, где лежит `.net_csharp.sln`).
 2. Запустите API:
-   - `dotnet run --project FirstCoreApi`
+   - `dotnet run --project EventsService/EventsService.csproj`
 3. Проверьте, что API запущен:
    - `GET http://localhost:5159/events`
 
-Порты из `FirstCoreApi/Properties/launchSettings.json`:
+Порты из `EventsService/Properties/launchSettings.json`:
 - HTTP: `http://localhost:5159`
 - HTTPS: `https://localhost:7209`
 

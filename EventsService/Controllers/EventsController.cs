@@ -24,14 +24,7 @@ public class EventsController : ControllerBase
     [HttpPost]
     public ActionResult Create([FromBody] EventRequest request)
     {
-        var entity = new Event
-        {
-            Id = _eventService.GenerateId(),
-            Title = request.Title!,
-            Description = request.Description,
-            StartAt = request.StartAt,
-            EndAt = request.EndAt
-        };
+        var entity = new Event(request.Title!, request.Description, request.StartAt, request.EndAt);
         _eventService.Add(entity);
         var response = entity.CreateFrom<Event, EventResponse>();
         return CreatedAtAction(nameof(GetById), new { id = response.Id }, response);

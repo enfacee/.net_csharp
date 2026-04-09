@@ -5,5 +5,4 @@ public interface IEventService
     void Add(Event eventToAdd);    
     void Update(Event eventToUpdate);
     bool Remove(int id);
-    int GenerateId();
 }

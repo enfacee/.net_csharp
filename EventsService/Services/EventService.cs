@@ -2,7 +2,6 @@ public class EventService : IEventService
 {
     private readonly List<Event> _events = new ();
     private readonly Lock _lock = new();
-    private int _nextId = 1;
 
     public void Add(Event eventToAdd)
     {
@@ -48,6 +47,4 @@ public class EventService : IEventService
             existingEvent.CopyFrom(eventToUpdate);
         }
     }
-
-    public int GenerateId() => _nextId++;
 }
