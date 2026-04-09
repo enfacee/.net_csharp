@@ -47,4 +47,12 @@ public class EventService : IEventService
             existingEvent.CopyFrom(eventToUpdate);
         }
     }
+
+    public int GenerateId()
+    {
+        using (_lock.EnterScope())
+        {
+            return _events.Count() + 1;
+        }
+    }
 }

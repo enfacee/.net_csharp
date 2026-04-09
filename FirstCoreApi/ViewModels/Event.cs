@@ -1,5 +1,3 @@
-using System.ComponentModel.DataAnnotations;
-
 public class Event
 {
     public required int Id { get; init; }
