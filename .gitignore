@@ -1,0 +1,8 @@
+# Build results
+bin/
+obj/
+.vscode/
+*.nupkg
+*.snupkg
+publish/
+*.log
