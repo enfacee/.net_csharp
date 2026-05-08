@@ -11,11 +11,52 @@ public class EventService : IEventService
         }
     }
 
-    public IEnumerable<Event> GetAll()
+    public PaginatedResult<Event> GetAll(
+        string? title = null,
+        DateTime? from = null,
+        DateTime? to = null,
+        int page = 1,
+        int pageSize = 10)
     {
         using (_lock.EnterScope())
         {
-            return _events.ToArray();
+            if (page < 1)
+                throw new ArgumentOutOfRangeException(nameof(page), "Page must be greater than 0.");
+
+            if (pageSize < 1)
+                throw new ArgumentOutOfRangeException(nameof(pageSize), "PageSize must be greater than 0.");
+
+            var query = _events.AsEnumerable();
+
+            if (!string.IsNullOrWhiteSpace(title))
+            {
+                query = query.Where(e =>
+                    e.Title.Contains(title, StringComparison.OrdinalIgnoreCase));
+            }
+
+            if (from.HasValue)
+            {
+                query = query.Where(e => e.StartAt >= from.Value);
+            }
+
+            if (to.HasValue)
+            {
+                query = query.Where(e => e.EndAt <= to.Value);
+            }
+
+            var totalCount = query.Count();
+            var items = query
+                .Skip((page - 1) * pageSize)
+                .Take(pageSize)
+                .ToArray();
+
+            return new PaginatedResult<Event>
+            {
+                TotalCount = totalCount,
+                Items = items,
+                Page = page,
+                PageSize = items.Length
+            };
         }
     }
 

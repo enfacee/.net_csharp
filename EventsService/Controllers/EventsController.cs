@@ -10,9 +10,22 @@ public class EventsController : ControllerBase
         _eventService = eventService;
     }
     [HttpGet]
-    public ActionResult<EventResponse[]> GetAll()
+    public ActionResult<PaginatedResult<EventResponse>> GetAll(
+        [FromQuery] string? title,
+        [FromQuery] DateTime? from,
+        [FromQuery] DateTime? to,
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 10)
     {
-        return Ok(_eventService.GetAll().Select(e => e.CreateFrom<Event, EventResponse>()).ToArray());
+        var result = _eventService.GetAll(title, from, to, page, pageSize);
+
+        return Ok(new PaginatedResult<EventResponse>
+        {
+            TotalCount = result.TotalCount,
+            Items = result.Items.Select(e => e.CreateFrom<Event, EventResponse>()).ToArray(),
+            Page = result.Page,
+            PageSize = result.PageSize
+        });
     }
     [HttpGet("{id}")]
     public ActionResult<EventResponse> GetById(int id)
