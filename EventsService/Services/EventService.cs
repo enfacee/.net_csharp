@@ -1,13 +1,16 @@
+using System.ComponentModel.DataAnnotations;
+
 public class EventService : IEventService
 {
     private readonly List<Event> _events = new ();
     private readonly Lock _lock = new();
 
-    public void Add(Event eventToAdd)
+    public void Add(Event @event)
     {
         using (_lock.EnterScope())
         {
-            _events.Add(eventToAdd);
+            ValidateEvent(@event);
+            _events.Add(@event);
         }
     }
 
@@ -79,13 +82,24 @@ public class EventService : IEventService
         }
     }
 
-    public void Update(Event eventToUpdate)
+    public void Update(Event @event)
     {
         using (_lock.EnterScope())
         {
-            if (_events.FirstOrDefault(e => e.Id == eventToUpdate.Id) is not { } existingEvent)
+            if (_events.FirstOrDefault(e => e.Id == @event.Id) is not { } existingEvent)
                 return;
-            existingEvent.CopyFrom(eventToUpdate);
+
+            ValidateEvent(@event);
+            existingEvent.CopyFrom(@event);
         }
+    }
+
+    private static void ValidateEvent(Event @event)
+    {
+        if (string.IsNullOrWhiteSpace(@event.Title))
+            throw new ValidationException("Title is required.");
+
+        if (@event.EndAt <= @event.StartAt)
+            throw new ValidationException("EndAt must be greater than StartAt.");
     }
 }

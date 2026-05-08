@@ -7,7 +7,7 @@ public interface IEventService
         int page = 1,
         int pageSize = 10);
     Event? GetById(int id);
-    void Add(Event eventToAdd);    
-    void Update(Event eventToUpdate);
+    void Add(Event @event);    
+    void Update(Event @event);
     bool Remove(int id);
 }
