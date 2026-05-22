@@ -24,6 +24,35 @@ public class BookingService : IBookingService
         }
     }
 
+    public Task<IReadOnlyCollection<Booking>> GetPendingBookingsAsync(CancellationToken cancellationToken = default)
+    {
+        using (_lock.EnterScope())
+        {
+            IReadOnlyCollection<Booking> pendingBookings = _bookings
+                .Where(x => x.Status == BookingStatus.Pending)
+                .ToArray();
+
+            return Task.FromResult(pendingBookings);
+        }
+    }
+
+    public Task<Booking?> ConfirmBookingAsync(int bookingId, CancellationToken cancellationToken = default)
+    {
+        using (_lock.EnterScope())
+        {
+            if (_bookings.FirstOrDefault(x => x.Id == bookingId) is not { } booking)
+                return Task.FromResult<Booking?>(null);
+
+            if (booking.Status != BookingStatus.Pending)
+                return Task.FromResult<Booking?>(booking);
+
+            booking.Status = BookingStatus.Confirmed;
+            booking.ProcessedAt = DateTime.UtcNow;
+
+            return Task.FromResult<Booking?>(booking);
+        }
+    }
+
     private static void ValidateBooking(Booking booking)
     {
         if (booking.EventId <= 0)
