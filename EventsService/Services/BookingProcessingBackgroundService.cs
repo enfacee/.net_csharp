@@ -45,7 +45,10 @@ public class BookingProcessingBackgroundService : BackgroundService
                 _logger.LogInformation("Processing booking {BookingId}.", booking.Id);
 
                 await Task.Delay(ProcessingDelay, stoppingToken);
-                var processedBooking = await _bookingService.ConfirmBookingAsync(booking.Id, stoppingToken);
+                var processedBooking = await _bookingService.UpdateBookingStatusAsync(
+                    booking.Id,
+                    BookingStatus.Confirmed,
+                    stoppingToken);
 
                 if (processedBooking is not null)
                 {

@@ -4,13 +4,23 @@ public class BookingService : IBookingService
 {
     private readonly List<Booking> _bookings = new();
     private readonly Lock _lock = new();
+    private readonly IEventService _eventService;
+
+    public BookingService(IEventService eventService)
+    {
+        _eventService = eventService;
+    }
 
     public Task<Booking> CreateBookingAsync(int eventId)
     {
+        ValidateEventId(eventId);
+
+        if (_eventService.GetById(eventId) is null)
+            throw new KeyNotFoundException("Event not found.");
+
         using (_lock.EnterScope())
         {
             var booking = new Booking(eventId);
-            ValidateBooking(booking);
             _bookings.Add(booking);
             return Task.FromResult(booking);
         }
@@ -36,8 +46,14 @@ public class BookingService : IBookingService
         }
     }
 
-    public Task<Booking?> ConfirmBookingAsync(int bookingId, CancellationToken cancellationToken = default)
+    public Task<Booking?> UpdateBookingStatusAsync(
+        int bookingId,
+        BookingStatus status,
+        CancellationToken cancellationToken = default)
     {
+        if (status == BookingStatus.Pending)
+            throw new ValidationException("Status must be Confirmed or Rejected.");
+
         using (_lock.EnterScope())
         {
             if (_bookings.FirstOrDefault(x => x.Id == bookingId) is not { } booking)
@@ -46,16 +62,16 @@ public class BookingService : IBookingService
             if (booking.Status != BookingStatus.Pending)
                 return Task.FromResult<Booking?>(booking);
 
-            booking.Status = BookingStatus.Confirmed;
+            booking.Status = status;
             booking.ProcessedAt = DateTime.UtcNow;
 
             return Task.FromResult<Booking?>(booking);
         }
     }
 
-    private static void ValidateBooking(Booking booking)
+    private static void ValidateEventId(int eventId)
     {
-        if (booking.EventId <= 0)
+        if (eventId <= 0)
             throw new ValidationException("EventId is required.");
     }
 }
