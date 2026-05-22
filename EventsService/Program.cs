@@ -9,6 +9,7 @@ builder.Services.AddProblemDetails(options =>
 });
 builder.Services.AddSwaggerGen();
 builder.Services.AddSingleton<IEventService, EventService>();
+builder.Services.AddSingleton<IBookingService, BookingService>();
 builder.Services.AddControllers();
 
 var app = builder.Build();

@@ -1,10 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-public class Booking(
-    int eventId,
-    BookingStatus status = BookingStatus.Pending,
-    DateTime? createdAt = null,
-    DateTime? processedAt = null)
+public class Booking(int eventId)
 {
     private static int next;
 
@@ -15,10 +11,10 @@ public class Booking(
     public int EventId { get; set; } = eventId;
 
     [Required]
-    public BookingStatus Status { get; set; } = status;
+    public BookingStatus Status { get; set; } = BookingStatus.Pending;
 
     [Required]
-    public DateTime CreatedAt { get; set; } = createdAt ?? DateTime.UtcNow;
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
-    public DateTime? ProcessedAt { get; set; } = processedAt;
+    public DateTime? ProcessedAt { get; set; }
 }
