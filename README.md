@@ -19,7 +19,7 @@ Swagger в режиме Development:
 
 ## Краткая документация API
 
-Базовый маршрут: `/events`
+Контроллеры используют маршруты `[controller]`, поэтому текущие пути начинаются с `/events` и `/bookings`.
 
 ### 1) Получить все события
 - `GET /events`
@@ -91,6 +91,54 @@ GET /events?title=meet&from=2026-05-01T00:00:00&to=2026-05-31T23:59:59&page=1&pa
 - `DELETE /events/{id}`
 - `200 OK`
 - `404 Not Found`, если событие не найдено
+
+### 6) Создать бронь для события
+- `POST /events/{id}/book`
+- `202 Accepted` и `BookingResponse`
+- Заголовок `Location`: ссылка на бронь, например `/bookings/{bookingId}`
+- `404 Not Found`, если событие не найдено
+
+Пример:
+
+```http
+POST /events/1/book
+```
+
+Пример ответа:
+
+```json
+{
+  "id": 1,
+  "eventId": 1,
+  "status": "Pending",
+  "createdAt": "2026-05-22T10:00:00Z",
+  "processedAt": null
+}
+```
+
+После создания бронь обрабатывается фоновым сервисом. Он периодически ищет брони в статусе `Pending`, имитирует обращение к внешней системе задержкой и переводит бронь в `Confirmed`, заполняя `processedAt`.
+
+### 7) Получить бронь по id
+- `GET /bookings/{id}`
+- `200 OK` и `BookingResponse`
+- `404 Not Found`, если бронь не найдена
+
+Пример ответа после фоновой обработки:
+
+```json
+{
+  "id": 1,
+  "eventId": 1,
+  "status": "Confirmed",
+  "createdAt": "2026-05-22T10:00:00Z",
+  "processedAt": "2026-05-22T10:00:03Z"
+}
+```
+
+Статусы брони:
+- `Pending`: бронь создана и ожидает обработки
+- `Confirmed`: бронь подтверждена
+- `Rejected`: бронь отклонена
 
 ## Формат ошибок
 
