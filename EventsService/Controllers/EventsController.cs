@@ -5,9 +5,12 @@ using Microsoft.AspNetCore.Mvc;
 public class EventsController : ControllerBase
 {
     private readonly IEventService _eventService;
-    public EventsController(IEventService eventService)
+    private readonly IBookingService _bookingService;
+
+    public EventsController(IEventService eventService, IBookingService bookingService)
     {
         _eventService = eventService;
+        _bookingService = bookingService;
     }
     [HttpGet]
     public ActionResult<PaginatedResult<EventResponse>> GetAll(
@@ -41,6 +44,21 @@ public class EventsController : ControllerBase
         _eventService.Add(@event);
         var response = @event.CreateFrom<Event, EventResponse>();
         return CreatedAtAction(nameof(GetById), new { id = response.Id }, response);
+    }
+
+    [HttpPost("{id}/book")]
+    public async Task<ActionResult<BookingResponse>> CreateBooking(int id)
+    {
+        if (_eventService.GetById(id) is null)
+            return NotFound();
+
+        var booking = await _bookingService.CreateBookingAsync(id);
+        var response = booking.CreateFrom<Booking, BookingResponse>();
+
+        return AcceptedAtRoute(
+            BookingsController.GetByIdRouteName,
+            new { id = response.Id },
+            response);
     }
 
     [HttpPut("{id}")]
