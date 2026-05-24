@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddProblemDetails(options =>
@@ -9,7 +11,13 @@ builder.Services.AddProblemDetails(options =>
 });
 builder.Services.AddSwaggerGen();
 builder.Services.AddSingleton<IEventService, EventService>();
-builder.Services.AddControllers();
+builder.Services.AddSingleton<IBookingService, BookingService>();
+builder.Services.AddHostedService<BookingProcessingBackgroundService>();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(new JsonStringEnumConverter());
+    });
 
 var app = builder.Build();
 
