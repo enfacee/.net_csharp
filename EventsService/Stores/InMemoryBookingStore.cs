@@ -14,10 +14,26 @@ public class InMemoryBookingStore : IBookingStore
         return _bookings.Values.ToArray();
     }
 
+    public IReadOnlyCollection<Booking> GetPending()
+    {
+        return _bookings.Values
+            .Where(booking => booking.Status == BookingStatus.Pending)
+            .ToArray();
+    }
+
     public Booking? GetById(int id)
     {
         return _bookings.TryGetValue(id, out var booking)
             ? booking
             : null;
+    }
+
+    public bool TryUpdate(Booking booking)
+    {
+        if (!_bookings.TryGetValue(booking.Id, out var existingBooking))
+            return false;
+
+        existingBooking.CopyFrom(booking);
+        return true;
     }
 }

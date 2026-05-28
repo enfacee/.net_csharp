@@ -2,9 +2,7 @@ using System.ComponentModel.DataAnnotations;
 
 public class BookingService(IEventService eventService, IBookingStore bookingStore) : IBookingService
 {
-    private readonly IBookingStore _bookingStore = bookingStore;
     private readonly Lock _bookingLock = new();
-    private readonly IEventService _eventService = eventService;
 
     public BookingService(IEventService eventService)
         : this(eventService, new InMemoryBookingStore())
@@ -17,16 +15,16 @@ public class BookingService(IEventService eventService, IBookingStore bookingSto
 
         using (_bookingLock.EnterScope())
         {
-            var @event = _eventService.GetById(eventId)
+            var @event = eventService.GetById(eventId)
                 ?? throw new KeyNotFoundException("Event not found.");
 
             if (!@event.TryReserveSeats())
                 throw new NoAvailableSeatsException("No available seats for this event");
 
-            _eventService.Update(@event);
+            eventService.Update(@event);
 
             var booking = new Booking(eventId);
-            if (!_bookingStore.TryAdd(booking))
+            if (!bookingStore.TryAdd(booking))
                 throw new ValidationException("Booking with the same Id already exists.");
 
             return Task.FromResult(booking);
@@ -35,14 +33,13 @@ public class BookingService(IEventService eventService, IBookingStore bookingSto
 
     public Task<Booking?> GetBookingByIdAsync(int bookingId)
     {
-        return Task.FromResult(_bookingStore.GetById(bookingId));
+        return Task.FromResult(bookingStore.GetById(bookingId));
     }
 
     public Task<IReadOnlyCollection<Booking>> GetPendingBookingsAsync(CancellationToken cancellationToken = default)
     {
-        IReadOnlyCollection<Booking> pendingBookings = _bookingStore.GetAll()
+        IReadOnlyCollection<Booking> pendingBookings = bookingStore.GetPending()
             .OrderBy(x => x.Id)
-            .Where(x => x.Status == BookingStatus.Pending)
             .ToArray();
 
         return Task.FromResult(pendingBookings);
@@ -56,14 +53,18 @@ public class BookingService(IEventService eventService, IBookingStore bookingSto
         if (status == BookingStatus.Pending)
             throw new ValidationException("Status must be Confirmed or Rejected.");
 
-        if (_bookingStore.GetById(bookingId) is not { } booking)
+        if (bookingStore.GetById(bookingId) is not { } booking)
             return Task.FromResult<Booking?>(null);
 
         if (booking.Status != BookingStatus.Pending)
             return Task.FromResult<Booking?>(booking);
 
-        booking.Status = status;
-        booking.ProcessedAt = DateTime.UtcNow;
+        if (status == BookingStatus.Confirmed)
+            booking.Confirm();
+        else
+            booking.Reject();
+
+        bookingStore.TryUpdate(booking);
 
         return Task.FromResult<Booking?>(booking);
     }
