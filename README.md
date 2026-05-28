@@ -48,7 +48,9 @@ GET /events?title=meet&from=2026-05-01T00:00:00&to=2026-05-31T23:59:59&page=1&pa
       "title": "Team meeting",
       "description": "Weekly sync",
       "startAt": "2026-05-10T10:00:00",
-      "endAt": "2026-05-10T11:00:00"
+      "endAt": "2026-05-10T11:00:00",
+      "totalSeats": 20,
+      "availableSeats": 20
     }
   ],
   "page": 1,
@@ -70,7 +72,8 @@ GET /events?title=meet&from=2026-05-01T00:00:00&to=2026-05-31T23:59:59&page=1&pa
   "title": "Team meeting",
   "description": "Weekly sync",
   "startAt": "2026-04-10T10:00:00",
-  "endAt": "2026-04-10T11:00:00"
+  "endAt": "2026-04-10T11:00:00",
+  "totalSeats": 20
 }
 ```
 
@@ -80,6 +83,7 @@ GET /events?title=meet&from=2026-05-01T00:00:00&to=2026-05-31T23:59:59&page=1&pa
 Правила валидации:
 - `title` обязателен (не пустой и не только из пробелов)
 - `endAt` должен быть больше `startAt`
+- `totalSeats` обязателен и должен быть больше `0`
 
 ### 4) Обновить событие
 - `PUT /events/{id}`

@@ -38,10 +38,14 @@ public class EventsController : ControllerBase
         return NotFound();
     }
     [HttpPost]
-    public ActionResult Create([FromBody] EventRequest request)
+    public async Task<ActionResult<EventResponse>> Create([FromBody] EventRequest request)
     {
-        var @event = new Event(request.Title!, request.Description, request.StartAt, request.EndAt);
-        _eventService.Add(@event);
+        var @event = await _eventService.CreateEventAsync(
+            request.Title!,
+            request.Description,
+            request.StartAt,
+            request.EndAt,
+            request.TotalSeats!.Value);
         var response = @event.CreateFrom<Event, EventResponse>();
         return CreatedAtAction(nameof(GetById), new { id = response.Id }, response);
     }
