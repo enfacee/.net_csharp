@@ -56,6 +56,7 @@ public sealed class GlobalExceptionHandlingMiddleware(
         ValidationException => StatusCodes.Status400BadRequest,
         ArgumentException => StatusCodes.Status400BadRequest,
         InvalidOperationException => StatusCodes.Status400BadRequest,
+        NotFoundException => StatusCodes.Status404NotFound,
         KeyNotFoundException => StatusCodes.Status404NotFound,
         _ => StatusCodes.Status500InternalServerError
     };

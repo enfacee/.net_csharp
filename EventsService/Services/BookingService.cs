@@ -16,7 +16,7 @@ public class BookingService(IEventService eventService, IBookingStore bookingSto
         using (_bookingLock.EnterScope())
         {
             var @event = eventService.GetById(eventId)
-                ?? throw new KeyNotFoundException("Event not found.");
+                ?? throw new NotFoundException("Event not found.");
 
             if (!@event.TryReserveSeats())
                 throw new NoAvailableSeatsException("No available seats for this event");
@@ -62,7 +62,15 @@ public class BookingService(IEventService eventService, IBookingStore bookingSto
         if (status == BookingStatus.Confirmed)
             booking.Confirm();
         else
+        {
             booking.Reject();
+
+            if (eventService.GetById(booking.EventId) is { } @event)
+            {
+                @event.ReleaseSeats();
+                eventService.Update(@event);
+            }
+        }
 
         bookingStore.TryUpdate(booking);
 
