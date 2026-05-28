@@ -2,8 +2,6 @@ using System.ComponentModel.DataAnnotations;
 
 public class EventService(IEventStore eventStore) : IEventService
 {
-    private readonly IEventStore _eventStore = eventStore;
-
     public EventService()
         : this(new InMemoryEventStore())
     {
@@ -26,7 +24,7 @@ public class EventService(IEventStore eventStore) : IEventService
     {
         ValidateEvent(@event);
 
-        if (!_eventStore.TryAdd(@event))
+        if (!eventStore.TryAdd(@event))
             throw new ValidationException("Event with the same Id already exists.");
     }
 
@@ -43,7 +41,7 @@ public class EventService(IEventStore eventStore) : IEventService
         if (pageSize < 1)
             throw new ArgumentOutOfRangeException(nameof(pageSize), "PageSize must be greater than 0.");
 
-        var query = _eventStore.GetAll()
+        var query = eventStore.GetAll()
             .OrderBy(e => e.Id)
             .AsEnumerable();
 
@@ -80,21 +78,21 @@ public class EventService(IEventStore eventStore) : IEventService
 
     public Event? GetById(int id)
     {
-        return _eventStore.GetById(id);
+        return eventStore.GetById(id);
     }
 
     public bool Remove(int id)
     {
-        return _eventStore.TryRemove(id);
+        return eventStore.TryRemove(id);
     }
 
     public void Update(Event @event)
     {
-        if (_eventStore.GetById(@event.Id) is null)
+        if (eventStore.GetById(@event.Id) is null)
             return;
 
         ValidateEvent(@event);
-        _eventStore.TryUpdate(@event);
+        eventStore.TryUpdate(@event);
     }
 
     private static void ValidateEvent(Event @event)

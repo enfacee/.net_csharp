@@ -3,27 +3,16 @@ using System.Runtime.ExceptionServices;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
 
-public sealed class GlobalExceptionHandlingMiddleware
+public sealed class GlobalExceptionHandlingMiddleware(
+    RequestDelegate next,
+    ILogger<GlobalExceptionHandlingMiddleware> logger,
+    IProblemDetailsService problemDetailsService)
 {
-    private readonly RequestDelegate _next;
-    private readonly ILogger<GlobalExceptionHandlingMiddleware> _logger;
-    private readonly IProblemDetailsService _problemDetailsService;
-
-    public GlobalExceptionHandlingMiddleware(
-        RequestDelegate next,
-        ILogger<GlobalExceptionHandlingMiddleware> logger,
-        IProblemDetailsService problemDetailsService)
-    {
-        _next = next;
-        _logger = logger;
-        _problemDetailsService = problemDetailsService;
-    }
-
     public async Task InvokeAsync(HttpContext context)
     {
         try
         {
-            await _next(context);
+            await next(context);
         }
         catch (Exception exception)
         {
@@ -35,13 +24,13 @@ public sealed class GlobalExceptionHandlingMiddleware
     {
         if (context.Response.HasStarted)
         {
-            _logger.LogWarning(exception, "Cannot write problem details because the response has already started.");
+            logger.LogWarning(exception, "Cannot write problem details because the response has already started.");
             ExceptionDispatchInfo.Capture(exception).Throw();
         }
 
         var statusCode = GetStatusCode(exception);
 
-        _logger.LogError(exception, "Unhandled exception while processing request {Method} {Path}", context.Request.Method, context.Request.Path);
+        logger.LogError(exception, "Unhandled exception while processing request {Method} {Path}", context.Request.Method, context.Request.Path);
 
         context.Response.Clear();
         context.Response.StatusCode = statusCode;
@@ -54,7 +43,7 @@ public sealed class GlobalExceptionHandlingMiddleware
             Instance = context.Request.Path
         };
 
-        await _problemDetailsService.WriteAsync(new ProblemDetailsContext
+        await problemDetailsService.WriteAsync(new ProblemDetailsContext
         {
             HttpContext = context,
             ProblemDetails = problemDetails
