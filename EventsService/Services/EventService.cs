@@ -1,9 +1,13 @@
-using System.Collections.Concurrent;
 using System.ComponentModel.DataAnnotations;
 
-public class EventService : IEventService
+public class EventService(IEventStore eventStore) : IEventService
 {
-    private readonly ConcurrentDictionary<int, Event> _events = new();
+    private readonly IEventStore _eventStore = eventStore;
+
+    public EventService()
+        : this(new InMemoryEventStore())
+    {
+    }
 
     public Task<Event> CreateEventAsync(
         string title,
@@ -22,7 +26,7 @@ public class EventService : IEventService
     {
         ValidateEvent(@event);
 
-        if (!_events.TryAdd(@event.Id, @event))
+        if (!_eventStore.TryAdd(@event))
             throw new ValidationException("Event with the same Id already exists.");
     }
 
@@ -39,7 +43,7 @@ public class EventService : IEventService
         if (pageSize < 1)
             throw new ArgumentOutOfRangeException(nameof(pageSize), "PageSize must be greater than 0.");
 
-        var query = _events.Values
+        var query = _eventStore.GetAll()
             .OrderBy(e => e.Id)
             .AsEnumerable();
 
@@ -76,23 +80,21 @@ public class EventService : IEventService
 
     public Event? GetById(int id)
     {
-        return _events.TryGetValue(id, out var @event)
-            ? @event
-            : null;
+        return _eventStore.GetById(id);
     }
 
     public bool Remove(int id)
     {
-        return _events.TryRemove(id, out _);
+        return _eventStore.TryRemove(id);
     }
 
     public void Update(Event @event)
     {
-        if (!_events.TryGetValue(@event.Id, out var existingEvent))
+        if (_eventStore.GetById(@event.Id) is null)
             return;
 
         ValidateEvent(@event);
-        existingEvent.CopyFrom(@event);
+        _eventStore.TryUpdate(@event);
     }
 
     private static void ValidateEvent(Event @event)

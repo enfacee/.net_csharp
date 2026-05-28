@@ -1,11 +1,15 @@
-using System.Collections.Concurrent;
 using System.ComponentModel.DataAnnotations;
 
-public class BookingService(IEventService eventService) : IBookingService
+public class BookingService(IEventService eventService, IBookingStore bookingStore) : IBookingService
 {
-    private readonly ConcurrentDictionary<int, Booking> _bookings = new();
+    private readonly IBookingStore _bookingStore = bookingStore;
     private readonly Lock _bookingLock = new();
     private readonly IEventService _eventService = eventService;
+
+    public BookingService(IEventService eventService)
+        : this(eventService, new InMemoryBookingStore())
+    {
+    }
 
     public Task<Booking> CreateBookingAsync(int eventId)
     {
@@ -22,7 +26,7 @@ public class BookingService(IEventService eventService) : IBookingService
             _eventService.Update(@event);
 
             var booking = new Booking(eventId);
-            if (!_bookings.TryAdd(booking.Id, booking))
+            if (!_bookingStore.TryAdd(booking))
                 throw new ValidationException("Booking with the same Id already exists.");
 
             return Task.FromResult(booking);
@@ -31,15 +35,12 @@ public class BookingService(IEventService eventService) : IBookingService
 
     public Task<Booking?> GetBookingByIdAsync(int bookingId)
     {
-        return Task.FromResult(
-            _bookings.TryGetValue(bookingId, out var booking)
-                ? booking
-                : null);
+        return Task.FromResult(_bookingStore.GetById(bookingId));
     }
 
     public Task<IReadOnlyCollection<Booking>> GetPendingBookingsAsync(CancellationToken cancellationToken = default)
     {
-        IReadOnlyCollection<Booking> pendingBookings = _bookings.Values
+        IReadOnlyCollection<Booking> pendingBookings = _bookingStore.GetAll()
             .OrderBy(x => x.Id)
             .Where(x => x.Status == BookingStatus.Pending)
             .ToArray();
@@ -55,7 +56,7 @@ public class BookingService(IEventService eventService) : IBookingService
         if (status == BookingStatus.Pending)
             throw new ValidationException("Status must be Confirmed or Rejected.");
 
-        if (!_bookings.TryGetValue(bookingId, out var booking))
+        if (_bookingStore.GetById(bookingId) is not { } booking)
             return Task.FromResult<Booking?>(null);
 
         if (booking.Status != BookingStatus.Pending)
