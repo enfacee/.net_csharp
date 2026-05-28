@@ -51,6 +51,7 @@ public class EventsController : ControllerBase
     }
 
     [HttpPost("{id}/book")]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<BookingResponse>> CreateBooking(int id)
     {
         if (_eventService.GetById(id) is null)

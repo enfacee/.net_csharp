@@ -63,6 +63,7 @@ public sealed class GlobalExceptionHandlingMiddleware
 
     private static int GetStatusCode(Exception exception) => exception switch
     {
+        NoAvailableSeatsException => StatusCodes.Status409Conflict,
         ValidationException => StatusCodes.Status400BadRequest,
         ArgumentException => StatusCodes.Status400BadRequest,
         InvalidOperationException => StatusCodes.Status400BadRequest,

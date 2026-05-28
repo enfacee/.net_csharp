@@ -101,6 +101,7 @@ GET /events?title=meet&from=2026-05-01T00:00:00&to=2026-05-31T23:59:59&page=1&pa
 - `202 Accepted` и `BookingResponse`
 - Заголовок `Location`: ссылка на бронь, например `/bookings/{bookingId}`
 - `404 Not Found`, если событие не найдено
+- `409 Conflict`, если на событие не осталось свободных мест
 
 Пример:
 
