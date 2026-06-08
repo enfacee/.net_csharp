@@ -46,9 +46,6 @@ public class EventsController(IEventService eventService, IBookingService bookin
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<BookingResponse>> CreateBooking(int id)
     {
-        if (eventService.GetById(id) is null)
-            return NotFound();
-
         var booking = await bookingService.CreateBookingAsync(id);
         var response = booking.CreateFrom<Booking, BookingResponse>();
 

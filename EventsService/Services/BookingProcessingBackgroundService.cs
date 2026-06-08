@@ -76,15 +76,18 @@ public class BookingProcessingBackgroundService(
         }
         catch (Exception exception)
         {
-            await RejectBookingAndReleaseSeatAsync(booking, exception);
+            await RejectBookingAndReleaseSeatAsync(booking, exception, stoppingToken);
         }
     }
 
-    private async Task RejectBookingAndReleaseSeatAsync(Booking booking, Exception exception)
+    private async Task RejectBookingAndReleaseSeatAsync(
+        Booking booking,
+        Exception exception,
+        CancellationToken stoppingToken)
     {
         logger.LogError(exception, "Failed to process booking {BookingId}.", booking.Id);
 
-        await _processingSemaphore.WaitAsync();
+        await _processingSemaphore.WaitAsync(stoppingToken);
         try
         {
             booking.Reject();
