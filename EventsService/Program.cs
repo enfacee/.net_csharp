@@ -10,6 +10,8 @@ builder.Services.AddProblemDetails(options =>
     };
 });
 builder.Services.AddSwaggerGen();
+builder.Services.AddSingleton<IEventStore, InMemoryEventStore>();
+builder.Services.AddSingleton<IBookingStore, InMemoryBookingStore>();
 builder.Services.AddSingleton<IEventService, EventService>();
 builder.Services.AddSingleton<IBookingService, BookingService>();
 builder.Services.AddHostedService<BookingProcessingBackgroundService>();

@@ -1,49 +1,48 @@
 using System.ComponentModel.DataAnnotations;
 
-public class BookingService : IBookingService
+public class BookingService(IEventService eventService, IBookingStore bookingStore) : IBookingService
 {
-    private readonly List<Booking> _bookings = new();
-    private readonly Lock _lock = new();
-    private readonly IEventService _eventService;
+    private readonly Lock _bookingLock = new();
 
     public BookingService(IEventService eventService)
+        : this(eventService, new InMemoryBookingStore())
     {
-        _eventService = eventService;
     }
 
     public Task<Booking> CreateBookingAsync(int eventId)
     {
         ValidateEventId(eventId);
 
-        if (_eventService.GetById(eventId) is null)
-            throw new KeyNotFoundException("Event not found.");
-
-        using (_lock.EnterScope())
+        using (_bookingLock.EnterScope())
         {
+            var @event = eventService.GetById(eventId)
+                ?? throw new NotFoundException("Event not found.");
+
+            if (!@event.TryReserveSeats())
+                throw new NoAvailableSeatsException("No available seats for this event");
+
+            eventService.Update(@event);
+
             var booking = new Booking(eventId);
-            _bookings.Add(booking);
+            if (!bookingStore.TryAdd(booking))
+                throw new ValidationException("Booking with the same Id already exists.");
+
             return Task.FromResult(booking);
         }
     }
 
     public Task<Booking?> GetBookingByIdAsync(int bookingId)
     {
-        using (_lock.EnterScope())
-        {
-            return Task.FromResult(_bookings.FirstOrDefault(x => x.Id == bookingId));
-        }
+        return Task.FromResult(bookingStore.GetById(bookingId));
     }
 
     public Task<IReadOnlyCollection<Booking>> GetPendingBookingsAsync(CancellationToken cancellationToken = default)
     {
-        using (_lock.EnterScope())
-        {
-            IReadOnlyCollection<Booking> pendingBookings = _bookings
-                .Where(x => x.Status == BookingStatus.Pending)
-                .ToArray();
+        IReadOnlyCollection<Booking> pendingBookings = bookingStore.GetPending()
+            .OrderBy(x => x.Id)
+            .ToArray();
 
-            return Task.FromResult(pendingBookings);
-        }
+        return Task.FromResult(pendingBookings);
     }
 
     public Task<Booking?> UpdateBookingStatusAsync(
@@ -54,19 +53,28 @@ public class BookingService : IBookingService
         if (status == BookingStatus.Pending)
             throw new ValidationException("Status must be Confirmed or Rejected.");
 
-        using (_lock.EnterScope())
-        {
-            if (_bookings.FirstOrDefault(x => x.Id == bookingId) is not { } booking)
-                return Task.FromResult<Booking?>(null);
+        if (bookingStore.GetById(bookingId) is not { } booking)
+            return Task.FromResult<Booking?>(null);
 
-            if (booking.Status != BookingStatus.Pending)
-                return Task.FromResult<Booking?>(booking);
-
-            booking.Status = status;
-            booking.ProcessedAt = DateTime.UtcNow;
-
+        if (booking.Status != BookingStatus.Pending)
             return Task.FromResult<Booking?>(booking);
+
+        if (status == BookingStatus.Confirmed)
+            booking.Confirm();
+        else
+        {
+            booking.Reject();
+
+            if (eventService.GetById(booking.EventId) is { } @event)
+            {
+                @event.ReleaseSeats();
+                eventService.Update(@event);
+            }
         }
+
+        bookingStore.TryUpdate(booking);
+
+        return Task.FromResult<Booking?>(booking);
     }
 
     private static void ValidateEventId(int eventId)

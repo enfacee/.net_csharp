@@ -1,22 +1,16 @@
-public class BookingProcessingBackgroundService : BackgroundService
+public class BookingProcessingBackgroundService(
+    IBookingStore bookingStore,
+    IEventStore eventStore,
+    ILogger<BookingProcessingBackgroundService> logger) : BackgroundService
 {
     private static readonly TimeSpan PollingInterval = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan ProcessingDelay = TimeSpan.FromSeconds(2);
 
-    private readonly IBookingService _bookingService;
-    private readonly ILogger<BookingProcessingBackgroundService> _logger;
-
-    public BookingProcessingBackgroundService(
-        IBookingService bookingService,
-        ILogger<BookingProcessingBackgroundService> logger)
-    {
-        _bookingService = bookingService;
-        _logger = logger;
-    }
+    private readonly SemaphoreSlim _processingSemaphore = new(1, 1);
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        _logger.LogInformation("Booking processing background service started.");
+        logger.LogInformation("Booking processing background service started.");
 
         using var timer = new PeriodicTimer(PollingInterval);
 
@@ -30,42 +24,84 @@ public class BookingProcessingBackgroundService : BackgroundService
         }
         catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
         {
-            _logger.LogInformation("Booking processing background service stopped.");
+            logger.LogInformation("Booking processing background service stopped.");
         }
     }
 
     private async Task ProcessPendingBookingsAsync(CancellationToken stoppingToken)
     {
-        var pendingBookings = await _bookingService.GetPendingBookingsAsync(stoppingToken);
+        var pendingBookings = bookingStore.GetPending().ToList();
+        var tasks = pendingBookings.Select(booking => ProcessBookingAsync(booking, stoppingToken));
 
-        foreach (var booking in pendingBookings)
+        await Task.WhenAll(tasks);
+    }
+
+    private async Task ProcessBookingAsync(Booking booking, CancellationToken stoppingToken)
+    {
+        try
         {
+            logger.LogInformation("Processing booking {BookingId}.", booking.Id);
+
+            await Task.Delay(ProcessingDelay, stoppingToken);
+
+            await _processingSemaphore.WaitAsync(stoppingToken);
             try
             {
-                _logger.LogInformation("Processing booking {BookingId}.", booking.Id);
-
-                await Task.Delay(ProcessingDelay, stoppingToken);
-                var processedBooking = await _bookingService.UpdateBookingStatusAsync(
-                    booking.Id,
-                    BookingStatus.Confirmed,
-                    stoppingToken);
-
-                if (processedBooking is not null)
+                if (eventStore.GetById(booking.EventId) is null)
                 {
-                    _logger.LogInformation(
-                        "Booking {BookingId} processed with status {Status}.",
-                        processedBooking.Id,
-                        processedBooking.Status);
+                    booking.Reject();
+                    bookingStore.TryUpdate(booking);
+                    logger.LogWarning(
+                        "Booking {BookingId} rejected because event {EventId} was not found.",
+                        booking.Id,
+                        booking.EventId);
+                    return;
                 }
+
+                booking.Confirm();
+                bookingStore.TryUpdate(booking);
+                logger.LogInformation(
+                    "Booking {BookingId} processed with status {Status}.",
+                    booking.Id,
+                    booking.Status);
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            finally
             {
-                throw;
+                _processingSemaphore.Release();
             }
-            catch (Exception exception)
+        }
+        catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch (Exception exception)
+        {
+            await RejectBookingAndReleaseSeatAsync(booking, exception, stoppingToken);
+        }
+    }
+
+    private async Task RejectBookingAndReleaseSeatAsync(
+        Booking booking,
+        Exception exception,
+        CancellationToken stoppingToken)
+    {
+        logger.LogError(exception, "Failed to process booking {BookingId}.", booking.Id);
+
+        await _processingSemaphore.WaitAsync(stoppingToken);
+        try
+        {
+            booking.Reject();
+            bookingStore.TryUpdate(booking);
+
+            if (eventStore.GetById(booking.EventId) is { } @event)
             {
-                _logger.LogError(exception, "Failed to process booking {BookingId}.", booking.Id);
+                @event.ReleaseSeats();
+                eventStore.TryUpdate(@event);
             }
+        }
+        finally
+        {
+            _processingSemaphore.Release();
         }
     }
 }

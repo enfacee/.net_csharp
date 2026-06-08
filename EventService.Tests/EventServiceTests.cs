@@ -20,6 +20,23 @@ public class EventServiceTests
     }
 
     [Fact]
+    public async Task CreateEventAsync_ShouldCreateEventWithSeats()
+    {
+        var service = CreateService();
+        var startAt = new DateTime(2026, 05, 10, 9, 0, 0, DateTimeKind.Utc);
+        var endAt = startAt.AddHours(1);
+
+        var @event = await service.CreateEventAsync("Architecture review", null, startAt, endAt, totalSeats: 15);
+
+        var result = service.GetById(@event.Id);
+
+        result.Should().NotBeNull();
+        result!.Title.Should().Be("Architecture review");
+        result.TotalSeats.Should().Be(15);
+        result.AvailableSeats.Should().Be(15);
+    }
+
+    [Fact]
     public void GetAll_ShouldReturnAllEvents()
     {
         var service = CreateServiceWithEvents(
@@ -188,6 +205,63 @@ public class EventServiceTests
     }
 
     [Fact]
+    public void Create_ShouldInitializeAvailableSeatsFromTotalSeats()
+    {
+        var startAt = new DateTime(2026, 05, 10, 9, 0, 0, DateTimeKind.Utc);
+        var endAt = startAt.AddHours(1);
+
+        var @event = Event.Create("Limited event", null, startAt, endAt, totalSeats: 25);
+
+        @event.TotalSeats.Should().Be(25);
+        @event.AvailableSeats.Should().Be(25);
+    }
+
+    [Fact]
+    public void Create_ShouldThrowValidationException_WhenTotalSeatsIsInvalid()
+    {
+        var startAt = new DateTime(2026, 05, 10, 9, 0, 0, DateTimeKind.Utc);
+        var endAt = startAt.AddHours(1);
+
+        Action act = () => Event.Create("Invalid capacity", null, startAt, endAt, totalSeats: 0);
+
+        act.Should().Throw<ValidationException>()
+            .WithMessage("*TotalSeats must be greater than 0*");
+    }
+
+    [Fact]
+    public void TryReserveSeats_ShouldDecreaseAvailableSeats_WhenEnoughSeatsExist()
+    {
+        var @event = CreateEvent("Limited event", totalSeats: 3);
+
+        var reserved = @event.TryReserveSeats(2);
+
+        reserved.Should().BeTrue();
+        @event.AvailableSeats.Should().Be(1);
+    }
+
+    [Fact]
+    public void TryReserveSeats_ShouldReturnFalse_WhenNotEnoughSeatsExist()
+    {
+        var @event = CreateEvent("Limited event", totalSeats: 1);
+
+        var reserved = @event.TryReserveSeats(2);
+
+        reserved.Should().BeFalse();
+        @event.AvailableSeats.Should().Be(1);
+    }
+
+    [Fact]
+    public void ReleaseSeats_ShouldIncreaseAvailableSeatsWithoutExceedingTotalSeats()
+    {
+        var @event = CreateEvent("Limited event", totalSeats: 3);
+        @event.TryReserveSeats(2);
+
+        @event.ReleaseSeats(5);
+
+        @event.AvailableSeats.Should().Be(3);
+    }
+
+    [Fact]
     public void Update_ShouldThrowValidationException_WhenDatesAreInvalid()
     {
         var startAt = new DateTime(2026, 05, 10, 10, 0, 0, DateTimeKind.Utc);
@@ -268,12 +342,13 @@ public class EventServiceTests
         string title,
         string? description = null,
         DateTime? startAt = null,
-        DateTime? endAt = null)
+        DateTime? endAt = null,
+        int totalSeats = 1)
     {
         var actualStartAt = startAt ?? new DateTime(2026, 05, 10, 9, 0, 0, DateTimeKind.Utc);
         var actualEndAt = endAt ?? actualStartAt.AddHours(1);
 
-        return new Event(title, description, actualStartAt, actualEndAt);
+        return new Event(title, description, actualStartAt, actualEndAt, totalSeats);
     }
 
     private static void SetEventId(Event @event, int id)

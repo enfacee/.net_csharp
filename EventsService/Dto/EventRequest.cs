@@ -6,6 +6,7 @@ public class EventRequest : IValidatableObject
     public string? Description { get; set; }
     public DateTime StartAt { get; set; }
     public DateTime EndAt { get; set; }
+    public int? TotalSeats { get; set; }
 
     public IEnumerable<ValidationResult> Validate(ValidationContext validationContext)
     {
@@ -16,5 +17,10 @@ public class EventRequest : IValidatableObject
             yield return new ValidationResult(
                 "EndAt must be greater than StartAt",
                 [nameof(StartAt), nameof(EndAt)]);
+
+        if (TotalSeats is null)
+            yield return new ValidationResult("TotalSeats is required", [nameof(TotalSeats)]);
+        else if (TotalSeats <= 0)
+            yield return new ValidationResult("TotalSeats must be greater than 0", [nameof(TotalSeats)]);
     }
 }
