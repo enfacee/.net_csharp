@@ -1,39 +1,40 @@
 using System.ComponentModel.DataAnnotations;
+using Microsoft.EntityFrameworkCore;
 
-public class EventService(IEventStore eventStore) : IEventService
+public class EventService(AppDbContext context) : IEventService
 {
-    public EventService()
-        : this(new InMemoryEventStore())
-    {
-    }
-
-    public Task<Event> CreateEventAsync(
+    public async Task<Event> CreateEventAsync(
         string title,
         string? description,
         DateTime startAt,
         DateTime endAt,
-        int totalSeats)
+        int totalSeats,
+        CancellationToken cancellationToken = default)
     {
         var @event = Event.Create(title, description, startAt, endAt, totalSeats);
-        Add(@event);
+        await AddAsync(@event, cancellationToken);
 
-        return Task.FromResult(@event);
+        return @event;
     }
 
-    public void Add(Event @event)
+    public async Task AddAsync(Event @event, CancellationToken cancellationToken = default)
     {
         ValidateEvent(@event);
 
-        if (!eventStore.TryAdd(@event))
+        if (await context.Events.AnyAsync(e => e.Id == @event.Id, cancellationToken))
             throw new ValidationException("Event with the same Id already exists.");
+
+        context.Events.Add(@event);
+        await context.SaveChangesAsync(cancellationToken);
     }
 
-    public PaginatedResult<Event> GetAll(
+    public async Task<PaginatedResult<Event>> GetAllAsync(
         string? title = null,
         DateTime? from = null,
         DateTime? to = null,
         int page = 1,
-        int pageSize = 10)
+        int pageSize = 10,
+        CancellationToken cancellationToken = default)
     {
         if (page < 1)
             throw new ArgumentOutOfRangeException(nameof(page), "Page must be greater than 0.");
@@ -41,14 +42,15 @@ public class EventService(IEventStore eventStore) : IEventService
         if (pageSize < 1)
             throw new ArgumentOutOfRangeException(nameof(pageSize), "PageSize must be greater than 0.");
 
-        var query = eventStore.GetAll()
+        var query = context.Events
+            .AsNoTracking()
             .OrderBy(e => e.Id)
-            .AsEnumerable();
+            .AsQueryable();
 
         if (!string.IsNullOrWhiteSpace(title))
         {
-            query = query.Where(e =>
-                e.Title.Contains(title, StringComparison.OrdinalIgnoreCase));
+            var normalizedTitle = title.Trim().ToLower();
+            query = query.Where(e => e.Title.ToLower().Contains(normalizedTitle));
         }
 
         if (from.HasValue)
@@ -61,11 +63,11 @@ public class EventService(IEventStore eventStore) : IEventService
             query = query.Where(e => e.EndAt <= to.Value);
         }
 
-        var totalCount = query.Count();
-        var items = query
+        var totalCount = await query.CountAsync(cancellationToken);
+        var items = await query
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
-            .ToArray();
+            .ToArrayAsync(cancellationToken);
 
         return new PaginatedResult<Event>
         {
@@ -76,23 +78,34 @@ public class EventService(IEventStore eventStore) : IEventService
         };
     }
 
-    public Event? GetById(int id)
+    public async Task<Event?> GetByIdAsync(int id, CancellationToken cancellationToken = default)
     {
-        return eventStore.GetById(id);
+        return await context.Events.FindAsync([id], cancellationToken);
     }
 
-    public bool Remove(int id)
+    public async Task<bool> RemoveAsync(int id, CancellationToken cancellationToken = default)
     {
-        return eventStore.TryRemove(id);
+        var @event = await context.Events.FindAsync([id], cancellationToken);
+        if (@event is null)
+            return false;
+
+        context.Events.Remove(@event);
+        await context.SaveChangesAsync(cancellationToken);
+        return true;
     }
 
-    public void Update(Event @event)
+    public async Task UpdateAsync(Event @event, CancellationToken cancellationToken = default)
     {
-        if (eventStore.GetById(@event.Id) is null)
+        var existingEvent = await context.Events.FindAsync([@event.Id], cancellationToken);
+        if (existingEvent is null)
             return;
 
         ValidateEvent(@event);
-        eventStore.TryUpdate(@event);
+
+        if (!ReferenceEquals(existingEvent, @event))
+            existingEvent.CopyFrom(@event);
+
+        await context.SaveChangesAsync(cancellationToken);
     }
 
     private static void ValidateEvent(Event @event)

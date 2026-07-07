@@ -1,51 +1,53 @@
 using System.ComponentModel.DataAnnotations;
+using Microsoft.EntityFrameworkCore;
 
-public class BookingService(IEventService eventService, IBookingStore bookingStore) : IBookingService
+public class BookingService(AppDbContext context) : IBookingService
 {
-    private readonly Lock _bookingLock = new();
+    private static readonly SemaphoreSlim BookingSemaphore = new(1, 1);
 
-    public BookingService(IEventService eventService)
-        : this(eventService, new InMemoryBookingStore())
-    {
-    }
-
-    public Task<Booking> CreateBookingAsync(int eventId)
+    public async Task<Booking> CreateBookingAsync(int eventId)
     {
         ValidateEventId(eventId);
 
-        using (_bookingLock.EnterScope())
+        await BookingSemaphore.WaitAsync();
+        try
         {
-            var @event = eventService.GetById(eventId)
+            var @event = await context.Events.FindAsync(eventId)
                 ?? throw new NotFoundException("Event not found.");
 
             if (!@event.TryReserveSeats())
                 throw new NoAvailableSeatsException("No available seats for this event");
 
-            eventService.Update(@event);
-
             var booking = new Booking(eventId);
-            if (!bookingStore.TryAdd(booking))
+            if (await context.Bookings.AnyAsync(b => b.Id == booking.Id))
                 throw new ValidationException("Booking with the same Id already exists.");
 
-            return Task.FromResult(booking);
+            context.Bookings.Add(booking);
+            await context.SaveChangesAsync();
+
+            return booking;
+        }
+        finally
+        {
+            BookingSemaphore.Release();
         }
     }
 
-    public Task<Booking?> GetBookingByIdAsync(int bookingId)
+    public async Task<Booking?> GetBookingByIdAsync(int bookingId)
     {
-        return Task.FromResult(bookingStore.GetById(bookingId));
+        return await context.Bookings.FindAsync(bookingId);
     }
 
-    public Task<IReadOnlyCollection<Booking>> GetPendingBookingsAsync(CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyCollection<Booking>> GetPendingBookingsAsync(CancellationToken cancellationToken = default)
     {
-        IReadOnlyCollection<Booking> pendingBookings = bookingStore.GetPending()
+        return await context.Bookings
+            .AsNoTracking()
+            .Where(booking => booking.Status == BookingStatus.Pending)
             .OrderBy(x => x.Id)
-            .ToArray();
-
-        return Task.FromResult(pendingBookings);
+            .ToArrayAsync(cancellationToken);
     }
 
-    public Task<Booking?> UpdateBookingStatusAsync(
+    public async Task<Booking?> UpdateBookingStatusAsync(
         int bookingId,
         BookingStatus status,
         CancellationToken cancellationToken = default)
@@ -53,28 +55,33 @@ public class BookingService(IEventService eventService, IBookingStore bookingSto
         if (status == BookingStatus.Pending)
             throw new ValidationException("Status must be Confirmed or Rejected.");
 
-        if (bookingStore.GetById(bookingId) is not { } booking)
-            return Task.FromResult<Booking?>(null);
-
-        if (booking.Status != BookingStatus.Pending)
-            return Task.FromResult<Booking?>(booking);
-
-        if (status == BookingStatus.Confirmed)
-            booking.Confirm();
-        else
+        await BookingSemaphore.WaitAsync(cancellationToken);
+        try
         {
-            booking.Reject();
+            if (await context.Bookings.FindAsync([bookingId], cancellationToken) is not { } booking)
+                return null;
 
-            if (eventService.GetById(booking.EventId) is { } @event)
+            if (booking.Status != BookingStatus.Pending)
+                return booking;
+
+            if (status == BookingStatus.Confirmed)
+                booking.Confirm();
+            else
             {
-                @event.ReleaseSeats();
-                eventService.Update(@event);
+                booking.Reject();
+
+                if (await context.Events.FindAsync([booking.EventId], cancellationToken) is { } @event)
+                    @event.ReleaseSeats();
             }
+
+            await context.SaveChangesAsync(cancellationToken);
+
+            return booking;
         }
-
-        bookingStore.TryUpdate(booking);
-
-        return Task.FromResult<Booking?>(booking);
+        finally
+        {
+            BookingSemaphore.Release();
+        }
     }
 
     private static void ValidateEventId(int eventId)
