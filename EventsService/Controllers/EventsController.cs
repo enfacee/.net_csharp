@@ -5,14 +5,14 @@ using Microsoft.AspNetCore.Mvc;
 public class EventsController(IEventService eventService, IBookingService bookingService) : ControllerBase
 {
     [HttpGet]
-    public ActionResult<PaginatedResult<EventResponse>> GetAll(
+    public async Task<ActionResult<PaginatedResult<EventResponse>>> GetAll(
         [FromQuery] string? title,
         [FromQuery] DateTime? from,
         [FromQuery] DateTime? to,
         [FromQuery] int page = 1,
         [FromQuery] int pageSize = 10)
     {
-        var result = eventService.GetAll(title, from, to, page, pageSize);
+        var result = await eventService.GetAllAsync(title, from, to, page, pageSize);
 
         return Ok(new PaginatedResult<EventResponse>
         {
@@ -23,9 +23,9 @@ public class EventsController(IEventService eventService, IBookingService bookin
         });
     }
     [HttpGet("{id}")]
-    public ActionResult<EventResponse> GetById(int id)
+    public async Task<ActionResult<EventResponse>> GetById(int id)
     {
-        if (eventService.GetById(id) is {} @event)
+        if (await eventService.GetByIdAsync(id) is {} @event)
             return Ok(@event.CreateFrom<Event, EventResponse>());
         return NotFound();
     }
@@ -56,19 +56,19 @@ public class EventsController(IEventService eventService, IBookingService bookin
     }
 
     [HttpPut("{id}")]
-    public ActionResult Update(int id, [FromBody] EventRequest request)
+    public async Task<ActionResult> Update(int id, [FromBody] EventRequest request)
     {
-        if (eventService.GetById(id) is not {} @event)
+        if (await eventService.GetByIdAsync(id) is not {} @event)
             return NotFound();
         @event.CopyFrom(request);
-        eventService.Update(@event);
+        await eventService.UpdateAsync(@event);
         return Ok();
     }
 
     [HttpDelete("{id}")]
-    public ActionResult Delete(int id)
+    public async Task<ActionResult> Delete(int id)
     {
-        if (!eventService.Remove(id))
+        if (!await eventService.RemoveAsync(id))
             return NotFound();
         return Ok();
     }
