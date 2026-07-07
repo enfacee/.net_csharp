@@ -1,20 +1,38 @@
 using System.ComponentModel.DataAnnotations;
 
-public class Event(string title, string? description, DateTime startAt, DateTime endAt, int totalSeats = 1)
+public class Event
 {
     private static int next;
+
+    private Event()
+    {
+        Title = null!;
+    }
+
+    public Event(string title, string? description, DateTime startAt, DateTime endAt, int totalSeats = 1)
+    {
+        Id = ++next;
+        Title = title;
+        Description = description;
+        StartAt = startAt;
+        EndAt = endAt;
+        TotalSeats = totalSeats;
+        AvailableSeats = totalSeats;
+    }
+
     [Required]
-    public int Id { get; private set; } = ++next;
+    public int Id { get; private set; }
     [Required]
-    public string Title { get; set; } = title;
-    public string? Description { get; set; } = description;
+    public string Title { get; set; }
+    public string? Description { get; set; }
     [Required]
-    public DateTime StartAt { get; set; } = startAt;
+    public DateTime StartAt { get; set; }
     [Required]
-    public DateTime EndAt { get; set; } = endAt;
+    public DateTime EndAt { get; set; }
     [Required]
-    public int TotalSeats { get; private set; } = totalSeats;
-    public int AvailableSeats { get; private set; } = totalSeats;
+    public int TotalSeats { get; private set; }
+    public int AvailableSeats { get; private set; }
+    public ICollection<Booking> Bookings { get; private set; } = [];
 
     public static Event Create(
         string title,

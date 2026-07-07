@@ -1,14 +1,27 @@
 using System.ComponentModel.DataAnnotations;
 
-public class Booking(int eventId)
+public class Booking
 {
     private static int next;
 
-    [Required]
-    public int Id { get; private set; } = ++next;
+    private Booking()
+    {
+        Event = null!;
+    }
+
+    public Booking(int eventId)
+    {
+        Id = ++next;
+        EventId = eventId;
+    }
 
     [Required]
-    public int EventId { get; set; } = eventId;
+    public int Id { get; private set; }
+
+    [Required]
+    public int EventId { get; set; }
+
+    public Event Event { get; set; } = null!;
 
     [Required]
     public BookingStatus Status { get; set; } = BookingStatus.Pending;
