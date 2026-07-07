@@ -3,11 +3,14 @@
 ## Быстрый запуск
 
 1. Откройте терминал в корне репозитория (папка, где лежит `.net_csharp.sln`).
-2. Запустите API:
+2. Запустите PostgreSQL:
+   - `docker compose -f docker-compose_.yml up -d`
+3. Проверьте строку подключения в `EventsService/appsettings.json`.
+4. Запустите API:
    - `dotnet run --project EventsService/EventsService.csproj`
-3. Проверьте, что API запущен:
+5. Проверьте, что API запущен:
    - `GET http://localhost:5159/events`
-4. Запустите тесты:
+6. Запустите тесты:
    - `dotnet test EventService.Tests/EventService.Tests.csproj`
 
 Порты из `EventsService/Properties/launchSettings.json`:
@@ -16,6 +19,36 @@
 
 Swagger в режиме Development:
 - `https://localhost:7209/swagger`
+
+## База данных
+
+Для запуска приложения требуется PostgreSQL. В репозитории есть `docker-compose_.yml`, который поднимает контейнер `eventapi-postgres` с базой `eventapi`.
+
+Запуск PostgreSQL:
+
+```powershell
+docker compose -f docker-compose_.yml up -d
+```
+
+Остановка PostgreSQL:
+
+```powershell
+docker compose -f docker-compose_.yml down
+```
+
+Текущая строка подключения находится в `EventsService/appsettings.json`:
+
+```json
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "Host=localhost;Port=5433;Database=eventapi;Username=postgres;Password=postgres"
+  }
+}
+```
+
+Если PostgreSQL запущен не через этот compose-файл, измените `Host`, `Port`, `Database`, `Username` и `Password` под вашу локальную конфигурацию. Например, если PostgreSQL слушает стандартный порт, укажите `Port=5432`.
+
+Схема БД создается автоматически при запуске приложения через `EnsureCreated()` в `Program.cs`. Отдельно применять миграции не нужно.
 
 ## Краткая документация API
 
@@ -274,23 +307,16 @@ GET /bookings/1
 
 ## Потокобезопасность
 
-В проекте используются in-memory хранилища:
-- `InMemoryEventStore` хранит события в `ConcurrentDictionary<int, Event>`
-- `InMemoryBookingStore` хранит брони в `ConcurrentDictionary<int, Booking>`
+В проекте используется EF Core и PostgreSQL. Сервисы зарегистрированы как scoped, потому что `AppDbContext` имеет scoped lifetime.
 
-`ConcurrentDictionary` защищает операции с коллекцией: добавление, поиск, удаление и чтение snapshot-списков. Он не делает автоматически атомарной бизнес-операцию из нескольких шагов.
-
-Для создания брони в `BookingService` используется `Lock` (`_bookingLock`). Он защищает критическую секцию:
+Для создания брони в `BookingService` используется `SemaphoreSlim`. Он защищает критическую секцию:
 - получить событие
 - проверить и списать место через `TryReserveSeats()`
-- сохранить событие
 - создать и сохранить бронь
 
 Это нужно, чтобы два параллельных запроса не смогли одновременно увидеть одно и то же свободное место.
 
-В `BookingProcessingBackgroundService` используется `SemaphoreSlim`. Он защищает асинхронную запись результата обработки брони в хранилище. `SemaphoreSlim` выбран вместо `lock`, потому что внутри обработки есть `await`; обычный `lock` нельзя использовать вокруг асинхронного кода с `await`.
-
-Задержка, имитирующая внешний вызов, выполняется до захвата семафора. Поэтому несколько броней могут ждать внешний сервис параллельно, а запись статуса выполняется последовательно.
+`BookingProcessingBackgroundService` является singleton, поэтому он не получает `AppDbContext` напрямую. Для чтения pending-бронирований и обработки каждой брони создается отдельный scope через `IServiceScopeFactory`; каждая параллельная задача получает свой экземпляр `AppDbContext`.
 
 ## Пример овербукинга
 
@@ -312,6 +338,12 @@ GET /bookings/1
 ```
 
 ## Тесты
+
+В тестах используется EF Core InMemory-провайдер (`Microsoft.EntityFrameworkCore.InMemory`). Тестовые сервисы настраиваются через `ServiceCollection`: регистрируются `AppDbContext` и сервисы приложения.
+
+Для каждого тестового класса создается уникальное имя InMemory-базы через `Guid.NewGuid().ToString()`. Имя базы сохраняется в переменную перед вызовом `UseInMemoryDatabase`, чтобы все scope внутри одного тестового класса работали с одной и той же InMemory-базой.
+
+В тестах конкурентности каждый параллельный запрос создает отдельный DI scope и получает собственный scoped `AppDbContext`.
 
 Запуск тестов из корня репозитория:
 
