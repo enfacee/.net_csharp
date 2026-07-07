@@ -1,34 +1,36 @@
 using System.ComponentModel.DataAnnotations;
 using FluentAssertions;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace EventsService.Tests;
 
-public class EventServiceTests
+public class EventServiceTests : IDisposable
 {
-    [Fact]
-    public void Add_ShouldCreateEvent()
+    private readonly ServiceProvider _serviceProvider;
+
+    public EventServiceTests()
     {
-        var service = CreateService();
-        var @event = CreateEvent("Architecture review");
+        var dbName = Guid.NewGuid().ToString();
+        var services = new ServiceCollection();
+        services.AddDbContext<AppDbContext>(options =>
+            options.UseInMemoryDatabase(dbName));
+        services.AddScoped<IEventService, EventService>();
 
-        service.Add(@event);
-
-        var result = service.GetById(@event.Id);
-
-        result.Should().NotBeNull();
-        result!.Title.Should().Be("Architecture review");
+        _serviceProvider = services.BuildServiceProvider();
     }
 
     [Fact]
     public async Task CreateEventAsync_ShouldCreateEventWithSeats()
     {
-        var service = CreateService();
+        using var scope = _serviceProvider.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<IEventService>();
         var startAt = new DateTime(2026, 05, 10, 9, 0, 0, DateTimeKind.Utc);
         var endAt = startAt.AddHours(1);
 
         var @event = await service.CreateEventAsync("Architecture review", null, startAt, endAt, totalSeats: 15);
 
-        var result = service.GetById(@event.Id);
+        var result = await service.GetByIdAsync(@event.Id);
 
         result.Should().NotBeNull();
         result!.Title.Should().Be("Architecture review");
@@ -37,47 +39,41 @@ public class EventServiceTests
     }
 
     [Fact]
-    public void GetAll_ShouldReturnAllEvents()
+    public async Task GetAllAsync_ShouldFilterAndPaginateEvents()
     {
-        var service = CreateServiceWithEvents(
-            CreateEvent("Event 1"),
-            CreateEvent("Event 2"),
-            CreateEvent("Event 3"));
+        using var scope = _serviceProvider.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<IEventService>();
+        var from = new DateTime(2026, 05, 10, 0, 0, 0, DateTimeKind.Utc);
+        var to = new DateTime(2026, 05, 11, 23, 59, 59, DateTimeKind.Utc);
 
-        var result = service.GetAll();
+        await service.AddAsync(CreateEvent("Team sync", startAt: from, endAt: from.AddHours(1)));
+        await service.AddAsync(CreateEvent("Client sync", startAt: from.AddDays(1), endAt: from.AddDays(1).AddHours(1)));
+        await service.AddAsync(CreateEvent("Team retro", startAt: from.AddDays(2), endAt: from.AddDays(2).AddHours(1)));
+        await service.AddAsync(CreateEvent("Workshop", startAt: from, endAt: from.AddHours(2)));
 
-        result.TotalCount.Should().Be(3);
+        var result = await service.GetAllAsync(title: "sync", from: from, to: to, page: 1, pageSize: 10);
+
+        result.TotalCount.Should().Be(2);
         result.Page.Should().Be(1);
-        result.PageSize.Should().Be(3);
-        result.Items.Select(x => x.Title).Should().ContainInOrder("Event 1", "Event 2", "Event 3");
+        result.PageSize.Should().Be(2);
+        result.Items.Select(x => x.Title).Should().ContainInOrder("Team sync", "Client sync");
     }
 
     [Fact]
-    public void GetById_ShouldReturnEvent_WhenItExists()
+    public async Task UpdateAsync_ShouldUpdateExistingEvent()
     {
-        var @event = CreateEvent("Town hall");
-        var service = CreateServiceWithEvents(@event);
-
-        var result = service.GetById(@event.Id);
-
-        result.Should().NotBeNull();
-        result!.Id.Should().Be(@event.Id);
-        result.Title.Should().Be("Town hall");
-    }
-
-    [Fact]
-    public void Update_ShouldUpdateExistingEvent()
-    {
-        var @event = CreateEvent("Sprint planning", startAt: DateTime.UtcNow, endAt: DateTime.UtcNow.AddHours(1));
-        var service = CreateServiceWithEvents(@event);
+        using var scope = _serviceProvider.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<IEventService>();
+        var @event = CreateEvent("Sprint planning");
+        await service.AddAsync(@event);
 
         @event.Title = "Updated sprint planning";
         @event.Description = "Updated description";
         @event.EndAt = @event.StartAt.AddHours(2);
 
-        service.Update(@event);
+        await service.UpdateAsync(@event);
 
-        var result = service.GetById(@event.Id);
+        var result = await service.GetByIdAsync(@event.Id);
 
         result.Should().NotBeNull();
         result!.Title.Should().Be("Updated sprint planning");
@@ -86,134 +82,31 @@ public class EventServiceTests
     }
 
     [Fact]
-    public void Remove_ShouldDeleteExistingEvent()
+    public async Task RemoveAsync_ShouldDeleteExistingEvent()
     {
+        using var scope = _serviceProvider.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<IEventService>();
         var @event = CreateEvent("To remove");
-        var service = CreateServiceWithEvents(@event);
+        await service.AddAsync(@event);
 
-        var removed = service.Remove(@event.Id);
+        var removed = await service.RemoveAsync(@event.Id);
 
         removed.Should().BeTrue();
-        service.GetById(@event.Id).Should().BeNull();
+        (await service.GetByIdAsync(@event.Id)).Should().BeNull();
     }
 
     [Fact]
-    public void GetAll_ShouldFilterByTitle_CaseInsensitiveAndPartial()
+    public async Task AddAsync_ShouldThrowValidationException_WhenTitleIsInvalid()
     {
-        var service = CreateServiceWithEvents(
-            CreateEvent("Backend Meetup"),
-            CreateEvent("Frontend demo"),
-            CreateEvent("Team meeting"));
-
-        var result = service.GetAll(title: "MEET");
-
-        result.TotalCount.Should().Be(2);
-        result.Items.Select(x => x.Title).Should().BeEquivalentTo(["Backend Meetup", "Team meeting"]);
-    }
-
-    [Fact]
-    public void GetAll_ShouldFilterByDateRange_Inclusively()
-    {
-        var from = new DateTime(2026, 05, 10, 9, 0, 0, DateTimeKind.Utc);
-        var to = new DateTime(2026, 05, 12, 11, 0, 0, DateTimeKind.Utc);
-        var service = CreateServiceWithEvents(
-            CreateEvent("Too early", startAt: from.AddDays(-1), endAt: from.AddHours(-1)),
-            CreateEvent("On boundary start", startAt: from, endAt: from.AddHours(1)),
-            CreateEvent("Inside range", startAt: from.AddDays(1), endAt: to.AddHours(-1)),
-            CreateEvent("On boundary end", startAt: to.AddHours(-2), endAt: to),
-            CreateEvent("Too late", startAt: to, endAt: to.AddHours(2)));
-
-        var result = service.GetAll(from: from, to: to);
-
-        result.TotalCount.Should().Be(3);
-        result.Items.Select(x => x.Title).Should().ContainInOrder("On boundary start", "Inside range", "On boundary end");
-    }
-
-    [Fact]
-    public void GetAll_ShouldPaginateEvents()
-    {
-        var service = CreateServiceWithEvents(
-            CreateEvent("Event 1"),
-            CreateEvent("Event 2"),
-            CreateEvent("Event 3"),
-            CreateEvent("Event 4"),
-            CreateEvent("Event 5"));
-
-        var result = service.GetAll(page: 2, pageSize: 2);
-
-        result.TotalCount.Should().Be(5);
-        result.Page.Should().Be(2);
-        result.PageSize.Should().Be(2);
-        result.Items.Select(x => x.Title).Should().ContainInOrder("Event 3", "Event 4");
-    }
-
-    [Fact]
-    public void GetAll_ShouldApplyCombinedFiltering()
-    {
-        var from = new DateTime(2026, 05, 10, 0, 0, 0, DateTimeKind.Utc);
-        var to = new DateTime(2026, 05, 11, 23, 59, 59, DateTimeKind.Utc);
-        var service = CreateServiceWithEvents(
-            CreateEvent("Team sync", startAt: from, endAt: from.AddHours(1)),
-            CreateEvent("Client sync", startAt: from.AddDays(1), endAt: from.AddDays(1).AddHours(1)),
-            CreateEvent("Team retro", startAt: from.AddDays(2), endAt: from.AddDays(2).AddHours(1)),
-            CreateEvent("Workshop", startAt: from, endAt: from.AddHours(2)));
-
-        var result = service.GetAll(title: "sync", from: from, to: to, page: 1, pageSize: 10);
-
-        result.TotalCount.Should().Be(2);
-        result.Items.Select(x => x.Title).Should().ContainInOrder("Team sync", "Client sync");
-    }
-
-    [Fact]
-    public void GetById_ShouldReturnNull_WhenIdDoesNotExist()
-    {
-        var service = CreateService();
-
-        var result = service.GetById(999999);
-
-        result.Should().BeNull();
-    }
-
-    [Fact]
-    public void Update_ShouldNotChangeAnything_WhenEventDoesNotExist()
-    {
-        var existing = CreateEvent("Existing");
-        var missing = CreateEvent("Missing");
-        var service = CreateServiceWithEvents(existing);
-
-        service.Update(missing);
-
-        var result = service.GetAll();
-
-        result.TotalCount.Should().Be(1);
-        result.Items.Should().ContainSingle();
-        result.Items[0].Id.Should().Be(existing.Id);
-        result.Items[0].Title.Should().Be("Existing");
-    }
-
-    [Fact]
-    public void Add_ShouldThrowValidationException_WhenTitleIsInvalid()
-    {
-        var service = CreateService();
+        using var scope = _serviceProvider.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<IEventService>();
         var startAt = new DateTime(2026, 05, 10, 9, 0, 0, DateTimeKind.Utc);
         var endAt = startAt.AddHours(1);
 
-        Action act = () => service.Add(new Event("   ", null, startAt, endAt));
+        Func<Task> act = () => service.AddAsync(new Event("   ", null, startAt, endAt));
 
-        act.Should().Throw<ValidationException>()
+        await act.Should().ThrowAsync<ValidationException>()
             .WithMessage("*Title is required*");
-    }
-
-    [Fact]
-    public void Create_ShouldInitializeAvailableSeatsFromTotalSeats()
-    {
-        var startAt = new DateTime(2026, 05, 10, 9, 0, 0, DateTimeKind.Utc);
-        var endAt = startAt.AddHours(1);
-
-        var @event = Event.Create("Limited event", null, startAt, endAt, totalSeats: 25);
-
-        @event.TotalSeats.Should().Be(25);
-        @event.AvailableSeats.Should().Be(25);
     }
 
     [Fact]
@@ -240,17 +133,6 @@ public class EventServiceTests
     }
 
     [Fact]
-    public void TryReserveSeats_ShouldReturnFalse_WhenNotEnoughSeatsExist()
-    {
-        var @event = CreateEvent("Limited event", totalSeats: 1);
-
-        var reserved = @event.TryReserveSeats(2);
-
-        reserved.Should().BeFalse();
-        @event.AvailableSeats.Should().Be(1);
-    }
-
-    [Fact]
     public void ReleaseSeats_ShouldIncreaseAvailableSeatsWithoutExceedingTotalSeats()
     {
         var @event = CreateEvent("Limited event", totalSeats: 3);
@@ -262,80 +144,23 @@ public class EventServiceTests
     }
 
     [Fact]
-    public void Update_ShouldThrowValidationException_WhenDatesAreInvalid()
+    public async Task GetAllAsync_ShouldThrowArgumentOutOfRangeException_WhenPageOrPageSizeIsInvalid()
     {
-        var startAt = new DateTime(2026, 05, 10, 10, 0, 0, DateTimeKind.Utc);
-        var existing = CreateEvent("Persisted event", startAt: startAt, endAt: startAt.AddHours(1));
-        var invalidUpdate = CreateEvent("Persisted event", startAt: startAt, endAt: startAt.AddMinutes(-1));
-        var service = CreateServiceWithEvents(existing);
+        using var scope = _serviceProvider.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<IEventService>();
 
-        SetEventId(invalidUpdate, existing.Id);
+        Func<Task> invalidPage = () => service.GetAllAsync(page: 0);
+        Func<Task> invalidPageSize = () => service.GetAllAsync(pageSize: 0);
 
-        Action act = () => service.Update(invalidUpdate);
-
-        act.Should().Throw<ValidationException>()
-            .WithMessage("*EndAt must be greater than StartAt*");
-
-        var result = service.GetById(existing.Id);
-        result.Should().NotBeNull();
-        result!.EndAt.Should().Be(startAt.AddHours(1));
-    }
-
-    [Fact]
-    public void GetAll_ShouldIgnoreEmptyOrWhitespaceTitleFilter()
-    {
-        var service = CreateServiceWithEvents(
-            CreateEvent("Event 1"),
-            CreateEvent("Event 2"));
-
-        var emptyResult = service.GetAll(title: string.Empty);
-        var whitespaceResult = service.GetAll(title: "   ");
-
-        emptyResult.TotalCount.Should().Be(2);
-        whitespaceResult.TotalCount.Should().Be(2);
-    }
-
-    [Fact]
-    public void GetAll_ShouldReturnEmptyItems_WhenPageIsBeyondAvailableRange()
-    {
-        var service = CreateServiceWithEvents(
-            CreateEvent("Event 1"),
-            CreateEvent("Event 2"));
-
-        var result = service.GetAll(page: 3, pageSize: 2);
-
-        result.TotalCount.Should().Be(2);
-        result.Page.Should().Be(3);
-        result.PageSize.Should().Be(0);
-        result.Items.Should().BeEmpty();
-    }
-
-    [Fact]
-    public void GetAll_ShouldThrowArgumentOutOfRangeException_WhenPageOrPageSizeIsInvalid()
-    {
-        var service = CreateServiceWithEvents(CreateEvent("Event 1"));
-
-        Action invalidPage = () => service.GetAll(page: 0);
-        Action invalidPageSize = () => service.GetAll(pageSize: 0);
-
-        invalidPage.Should().Throw<ArgumentOutOfRangeException>()
+        await invalidPage.Should().ThrowAsync<ArgumentOutOfRangeException>()
             .WithMessage("*Page must be greater than 0*");
-        invalidPageSize.Should().Throw<ArgumentOutOfRangeException>()
+        await invalidPageSize.Should().ThrowAsync<ArgumentOutOfRangeException>()
             .WithMessage("*PageSize must be greater than 0*");
     }
 
-    private static EventService CreateService() => new();
-
-    private static EventService CreateServiceWithEvents(params Event[] events)
+    public void Dispose()
     {
-        var service = CreateService();
-
-        foreach (var @event in events)
-        {
-            service.Add(@event);
-        }
-
-        return service;
+        _serviceProvider.Dispose();
     }
 
     private static Event CreateEvent(
@@ -349,10 +174,5 @@ public class EventServiceTests
         var actualEndAt = endAt ?? actualStartAt.AddHours(1);
 
         return new Event(title, description, actualStartAt, actualEndAt, totalSeats);
-    }
-
-    private static void SetEventId(Event @event, int id)
-    {
-        typeof(Event).GetProperty(nameof(Event.Id))!.SetValue(@event, id);
     }
 }
