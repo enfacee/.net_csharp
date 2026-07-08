@@ -1,19 +1,19 @@
-﻿# .net_csharp
+﻿# EventApi
 
 ## Быстрый запуск
 
-1. Откройте терминал в корне репозитория (папка, где лежит `.net_csharp.sln`).
+1. Откройте терминал в корне репозитория (папка, где лежит `EventApi.sln`).
 2. Запустите PostgreSQL:
    - `docker compose -f docker-compose_.yml up -d`
-3. Проверьте строку подключения в `EventsService/appsettings.json`.
+3. Проверьте строку подключения в `EventApi/appsettings.json`.
 4. Запустите API:
-   - `dotnet run --project EventsService/EventsService.csproj`
+   - `dotnet run --project EventApi/EventApi.csproj`
 5. Проверьте, что API запущен:
    - `GET http://localhost:5159/events`
 6. Запустите тесты:
-   - `dotnet test EventService.Tests/EventService.Tests.csproj`
+   - `dotnet test EventApi.sln`
 
-Порты из `EventsService/Properties/launchSettings.json`:
+Порты из `EventApi/Properties/launchSettings.json`:
 - HTTP: `http://localhost:5159`
 - HTTPS: `https://localhost:7209`
 
@@ -36,7 +36,7 @@ docker compose -f docker-compose_.yml up -d
 docker compose -f docker-compose_.yml down
 ```
 
-Текущая строка подключения находится в `EventsService/appsettings.json`:
+Текущая строка подключения находится в `EventApi/appsettings.json`:
 
 ```json
 {
@@ -348,5 +348,5 @@ GET /bookings/1
 Запуск тестов из корня репозитория:
 
 ```powershell
-dotnet test EventService.Tests/EventService.Tests.csproj
+dotnet test EventApi.sln
 ```
