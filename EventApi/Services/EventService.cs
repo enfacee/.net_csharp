@@ -1,9 +1,8 @@
 using System.ComponentModel.DataAnnotations;
-using Microsoft.EntityFrameworkCore;
 
 namespace EventApi;
 
-public class EventService(AppDbContext context) : IEventService
+public class EventService(IEventRepository eventRepository) : IEventService
 {
     public async Task<Event> CreateEventAsync(
         string title,
@@ -23,11 +22,11 @@ public class EventService(AppDbContext context) : IEventService
     {
         ValidateEvent(@event);
 
-        if (await context.Events.AnyAsync(e => e.Id == @event.Id, cancellationToken))
+        if (await eventRepository.ExistsAsync(@event.Id, cancellationToken))
             throw new ValidationException("Event with the same Id already exists.");
 
-        context.Events.Add(@event);
-        await context.SaveChangesAsync(cancellationToken);
+        await eventRepository.AddAsync(@event, cancellationToken);
+        await eventRepository.SaveChangesAsync(cancellationToken);
     }
 
     public async Task<PaginatedResult<Event>> GetAllAsync(
@@ -44,61 +43,26 @@ public class EventService(AppDbContext context) : IEventService
         if (pageSize < 1)
             throw new ArgumentOutOfRangeException(nameof(pageSize), "PageSize must be greater than 0.");
 
-        var query = context.Events
-            .AsNoTracking()
-            .OrderBy(e => e.Id)
-            .AsQueryable();
-
-        if (!string.IsNullOrWhiteSpace(title))
-        {
-            var normalizedTitle = title.Trim().ToLower();
-            query = query.Where(e => e.Title.ToLower().Contains(normalizedTitle));
-        }
-
-        if (from.HasValue)
-        {
-            query = query.Where(e => e.StartAt >= from.Value);
-        }
-
-        if (to.HasValue)
-        {
-            query = query.Where(e => e.EndAt <= to.Value);
-        }
-
-        var totalCount = await query.CountAsync(cancellationToken);
-        var items = await query
-            .Skip((page - 1) * pageSize)
-            .Take(pageSize)
-            .ToArrayAsync(cancellationToken);
-
-        return new PaginatedResult<Event>
-        {
-            TotalCount = totalCount,
-            Items = items,
-            Page = page,
-            PageSize = items.Length
-        };
+        return await eventRepository.GetAllAsync(title, from, to, page, pageSize, cancellationToken);
     }
 
     public async Task<Event?> GetByIdAsync(int id, CancellationToken cancellationToken = default)
     {
-        return await context.Events.FindAsync([id], cancellationToken);
+        return await eventRepository.GetByIdAsync(id, cancellationToken);
     }
 
     public async Task<bool> RemoveAsync(int id, CancellationToken cancellationToken = default)
     {
-        var @event = await context.Events.FindAsync([id], cancellationToken);
-        if (@event is null)
+        if (!await eventRepository.RemoveAsync(id, cancellationToken))
             return false;
 
-        context.Events.Remove(@event);
-        await context.SaveChangesAsync(cancellationToken);
+        await eventRepository.SaveChangesAsync(cancellationToken);
         return true;
     }
 
     public async Task UpdateAsync(Event @event, CancellationToken cancellationToken = default)
     {
-        var existingEvent = await context.Events.FindAsync([@event.Id], cancellationToken);
+        var existingEvent = await eventRepository.GetByIdAsync(@event.Id, cancellationToken);
         if (existingEvent is null)
             return;
 
@@ -107,7 +71,7 @@ public class EventService(AppDbContext context) : IEventService
         if (!ReferenceEquals(existingEvent, @event))
             existingEvent.CopyFrom(@event);
 
-        await context.SaveChangesAsync(cancellationToken);
+        await eventRepository.SaveChangesAsync(cancellationToken);
     }
 
     private static void ValidateEvent(Event @event)

@@ -59,6 +59,8 @@ public class BookingProcessingBackgroundServiceTests
     {
         var services = new ServiceCollection();
         services.AddDbContext<AppDbContext>(options => options.UseInMemoryDatabase(databaseName));
+        services.AddScoped<IEventRepository, EventRepository>();
+        services.AddScoped<IBookingRepository, BookingRepository>();
         var provider = services.BuildServiceProvider();
 
         return new BookingProcessingBackgroundService(

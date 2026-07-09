@@ -1,9 +1,10 @@
 using System.ComponentModel.DataAnnotations;
-using Microsoft.EntityFrameworkCore;
 
 namespace EventApi;
 
-public class BookingService(AppDbContext context) : IBookingService
+public class BookingService(
+    IBookingRepository bookingRepository,
+    IEventRepository eventRepository) : IBookingService
 {
     private static readonly SemaphoreSlim BookingSemaphore = new(1, 1);
 
@@ -14,18 +15,18 @@ public class BookingService(AppDbContext context) : IBookingService
         await BookingSemaphore.WaitAsync();
         try
         {
-            var @event = await context.Events.FindAsync(eventId)
+            var @event = await eventRepository.GetByIdAsync(eventId)
                 ?? throw new NotFoundException("Event not found.");
 
             if (!@event.TryReserveSeats())
                 throw new NoAvailableSeatsException("No available seats for this event");
 
             var booking = new Booking(eventId);
-            if (await context.Bookings.AnyAsync(b => b.Id == booking.Id))
+            if (await bookingRepository.ExistsAsync(booking.Id))
                 throw new ValidationException("Booking with the same Id already exists.");
 
-            context.Bookings.Add(booking);
-            await context.SaveChangesAsync();
+            await bookingRepository.AddAsync(booking);
+            await bookingRepository.SaveChangesAsync();
 
             return booking;
         }
@@ -37,16 +38,12 @@ public class BookingService(AppDbContext context) : IBookingService
 
     public async Task<Booking?> GetBookingByIdAsync(int bookingId)
     {
-        return await context.Bookings.FindAsync(bookingId);
+        return await bookingRepository.GetByIdAsync(bookingId);
     }
 
     public async Task<IReadOnlyCollection<Booking>> GetPendingBookingsAsync(CancellationToken cancellationToken = default)
     {
-        return await context.Bookings
-            .AsNoTracking()
-            .Where(booking => booking.Status == BookingStatus.Pending)
-            .OrderBy(x => x.Id)
-            .ToArrayAsync(cancellationToken);
+        return await bookingRepository.GetPendingBookingsAsync(cancellationToken);
     }
 
     public async Task<Booking?> UpdateBookingStatusAsync(
@@ -60,7 +57,7 @@ public class BookingService(AppDbContext context) : IBookingService
         await BookingSemaphore.WaitAsync(cancellationToken);
         try
         {
-            if (await context.Bookings.FindAsync([bookingId], cancellationToken) is not { } booking)
+            if (await bookingRepository.GetByIdAsync(bookingId, cancellationToken) is not { } booking)
                 return null;
 
             if (booking.Status != BookingStatus.Pending)
@@ -72,11 +69,11 @@ public class BookingService(AppDbContext context) : IBookingService
             {
                 booking.Reject();
 
-                if (await context.Events.FindAsync([booking.EventId], cancellationToken) is { } @event)
+                if (await eventRepository.GetByIdAsync(booking.EventId, cancellationToken) is { } @event)
                     @event.ReleaseSeats();
             }
 
-            await context.SaveChangesAsync(cancellationToken);
+            await bookingRepository.SaveChangesAsync(cancellationToken);
 
             return booking;
         }
