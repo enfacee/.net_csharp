@@ -10,7 +10,8 @@ internal sealed class EventConfiguration : IEntityTypeConfiguration<Event>
         builder.ToTable("Events");
 
         builder.HasKey(e => e.Id);
-        builder.Property(e => e.Id).ValueGeneratedNever();
+        builder.Property(e => e.Id)
+            .ValueGeneratedOnAdd();
 
         builder.Property(e => e.Title)
             .IsRequired()

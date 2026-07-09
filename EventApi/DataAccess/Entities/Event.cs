@@ -4,8 +4,6 @@ namespace EventApi;
 
 public class Event
 {
-    private static int next;
-
     private Event()
     {
         Title = null!;
@@ -13,7 +11,6 @@ public class Event
 
     public Event(string title, string? description, DateTime startAt, DateTime endAt, int totalSeats = 1)
     {
-        Id = ++next;
         Title = title;
         Description = description;
         StartAt = startAt;

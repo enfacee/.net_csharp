@@ -10,7 +10,8 @@ internal sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
         builder.ToTable("Bookings");
 
         builder.HasKey(b => b.Id);
-        builder.Property(b => b.Id).ValueGeneratedNever();
+        builder.Property(b => b.Id)
+            .ValueGeneratedOnAdd();
 
         builder.Property(b => b.EventId)
             .IsRequired();

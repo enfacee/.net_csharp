@@ -48,7 +48,7 @@ docker compose -f docker-compose_.yml down
 
 Если PostgreSQL запущен не через этот compose-файл, измените `Host`, `Port`, `Database`, `Username` и `Password` под вашу локальную конфигурацию. Например, если PostgreSQL слушает стандартный порт, укажите `Port=5432`.
 
-Схема БД создается автоматически при запуске приложения через `EnsureCreated()` в `Program.cs`. Отдельно применять миграции не нужно.
+Схема БД применяется автоматически при запуске приложения через `db.Database.Migrate()` в `Program.cs`. Начальная миграция находится в `EventApi/Migrations`.
 
 ## Краткая документация API
 

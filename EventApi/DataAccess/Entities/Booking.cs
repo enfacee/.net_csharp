@@ -4,8 +4,6 @@ namespace EventApi;
 
 public class Booking
 {
-    private static int next;
-
     private Booking()
     {
         Event = null!;
@@ -13,7 +11,6 @@ public class Booking
 
     public Booking(int eventId)
     {
-        Id = ++next;
         EventId = eventId;
     }
 
