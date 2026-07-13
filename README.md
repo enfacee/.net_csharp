@@ -50,6 +50,18 @@ docker compose -f docker-compose_.yml down
 
 Схема БД применяется автоматически при запуске приложения через `db.Database.Migrate()` в `Program.cs`. Начальная миграция находится в `EventApi/Migrations`.
 
+Создать новую миграцию:
+
+```powershell
+dotnet ef migrations add <MigrationName> --project EventApi/EventApi.csproj --startup-project EventApi/EventApi.csproj
+```
+
+Применить миграции вручную:
+
+```powershell
+dotnet ef database update --project EventApi/EventApi.csproj --startup-project EventApi/EventApi.csproj
+```
+
 ## Краткая документация API
 
 Контроллеры используют маршруты `[controller]`, поэтому текущие пути начинаются с `/events` и `/bookings`.
@@ -316,7 +328,15 @@ GET /bookings/1
 
 Это нужно, чтобы два параллельных запроса не смогли одновременно увидеть одно и то же свободное место.
 
-`BookingProcessingBackgroundService` является singleton, поэтому он не получает `AppDbContext` напрямую. Для чтения pending-бронирований и обработки каждой брони создается отдельный scope через `IServiceScopeFactory`; каждая параллельная задача получает свой экземпляр `AppDbContext`.
+`BookingProcessingBackgroundService` является singleton, поэтому он не получает scoped-зависимости напрямую. Для чтения pending-бронирований и обработки каждой брони создается отдельный scope через `IServiceScopeFactory`; каждая параллельная задача получает свои scoped-репозитории.
+
+## Репозитории
+
+Доступ к данным инкапсулирован в репозиториях:
+- `EventRepository` работает с событиями
+- `BookingRepository` работает с бронированиями
+
+Сервисы не обращаются к `AppDbContext` напрямую. В сервисах остается бизнес-логика: валидация, резервирование мест, обработка статусов и orchestration. Репозитории содержат только логику доступа к данным: запросы, добавление, удаление и сохранение изменений.
 
 ## Пример овербукинга
 
@@ -339,11 +359,21 @@ GET /bookings/1
 
 ## Тесты
 
-В тестах используется EF Core InMemory-провайдер (`Microsoft.EntityFrameworkCore.InMemory`). Тестовые сервисы настраиваются через `ServiceCollection`: регистрируются `AppDbContext` и сервисы приложения.
+Unit-тесты находятся в `EventApi.Tests`. В них используется EF Core InMemory-провайдер (`Microsoft.EntityFrameworkCore.InMemory`). Тестовые сервисы настраиваются через `ServiceCollection`: регистрируются `AppDbContext`, репозитории и сервисы приложения.
 
 Для каждого тестового класса создается уникальное имя InMemory-базы через `Guid.NewGuid().ToString()`. Имя базы сохраняется в переменную перед вызовом `UseInMemoryDatabase`, чтобы все scope внутри одного тестового класса работали с одной и той же InMemory-базой.
 
 В тестах конкурентности каждый параллельный запрос создает отдельный DI scope и получает собственный scoped `AppDbContext`.
+
+Интеграционные тесты находятся в `EventApi.IntegrationTests`. Они используют `Testcontainers.PostgreSql` и поднимают один общий контейнер PostgreSQL через fixture с `IAsyncLifetime`. Перед каждым тестом база приводится к чистому состоянию через `EnsureDeletedAsync()` и `MigrateAsync()`, поэтому тесты изолированы и не зависят от порядка запуска.
+
+Интеграционные тесты покрывают:
+- все методы `EventRepository` и `BookingRepository`
+- фильтрацию событий по `title`, `from`, `to`
+- комбинированные фильтры и пагинацию
+- обновление и удаление данных
+- внешний ключ `Bookings.EventId -> Events.Id`
+- миграционную схему: таблицы, primary key, identity-генерацию, ограничения колонок и связи
 
 Запуск тестов из корня репозитория:
 
