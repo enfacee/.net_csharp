@@ -1,19 +1,19 @@
-﻿# .net_csharp
+﻿# EventApi
 
 ## Быстрый запуск
 
-1. Откройте терминал в корне репозитория (папка, где лежит `.net_csharp.sln`).
+1. Откройте терминал в корне репозитория (папка, где лежит `EventApi.sln`).
 2. Запустите PostgreSQL:
    - `docker compose -f docker-compose_.yml up -d`
-3. Проверьте строку подключения в `EventsService/appsettings.json`.
+3. Проверьте строку подключения в `EventApi/appsettings.json`.
 4. Запустите API:
-   - `dotnet run --project EventsService/EventsService.csproj`
+   - `dotnet run --project EventApi/EventApi.csproj`
 5. Проверьте, что API запущен:
    - `GET http://localhost:5159/events`
 6. Запустите тесты:
-   - `dotnet test EventService.Tests/EventService.Tests.csproj`
+   - `dotnet test EventApi.sln`
 
-Порты из `EventsService/Properties/launchSettings.json`:
+Порты из `EventApi/Properties/launchSettings.json`:
 - HTTP: `http://localhost:5159`
 - HTTPS: `https://localhost:7209`
 
@@ -36,7 +36,7 @@ docker compose -f docker-compose_.yml up -d
 docker compose -f docker-compose_.yml down
 ```
 
-Текущая строка подключения находится в `EventsService/appsettings.json`:
+Текущая строка подключения находится в `EventApi/appsettings.json`:
 
 ```json
 {
@@ -48,7 +48,19 @@ docker compose -f docker-compose_.yml down
 
 Если PostgreSQL запущен не через этот compose-файл, измените `Host`, `Port`, `Database`, `Username` и `Password` под вашу локальную конфигурацию. Например, если PostgreSQL слушает стандартный порт, укажите `Port=5432`.
 
-Схема БД создается автоматически при запуске приложения через `EnsureCreated()` в `Program.cs`. Отдельно применять миграции не нужно.
+Схема БД применяется автоматически при запуске приложения через `db.Database.Migrate()` в `Program.cs`. Начальная миграция находится в `EventApi/Migrations`.
+
+Создать новую миграцию:
+
+```powershell
+dotnet ef migrations add <MigrationName> --project EventApi/EventApi.csproj --startup-project EventApi/EventApi.csproj
+```
+
+Применить миграции вручную:
+
+```powershell
+dotnet ef database update --project EventApi/EventApi.csproj --startup-project EventApi/EventApi.csproj
+```
 
 ## Краткая документация API
 
@@ -316,7 +328,15 @@ GET /bookings/1
 
 Это нужно, чтобы два параллельных запроса не смогли одновременно увидеть одно и то же свободное место.
 
-`BookingProcessingBackgroundService` является singleton, поэтому он не получает `AppDbContext` напрямую. Для чтения pending-бронирований и обработки каждой брони создается отдельный scope через `IServiceScopeFactory`; каждая параллельная задача получает свой экземпляр `AppDbContext`.
+`BookingProcessingBackgroundService` является singleton, поэтому он не получает scoped-зависимости напрямую. Для чтения pending-бронирований и обработки каждой брони создается отдельный scope через `IServiceScopeFactory`; каждая параллельная задача получает свои scoped-репозитории.
+
+## Репозитории
+
+Доступ к данным инкапсулирован в репозиториях:
+- `EventRepository` работает с событиями
+- `BookingRepository` работает с бронированиями
+
+Сервисы не обращаются к `AppDbContext` напрямую. В сервисах остается бизнес-логика: валидация, резервирование мест, обработка статусов и orchestration. Репозитории содержат только логику доступа к данным: запросы, добавление, удаление и сохранение изменений.
 
 ## Пример овербукинга
 
@@ -339,14 +359,24 @@ GET /bookings/1
 
 ## Тесты
 
-В тестах используется EF Core InMemory-провайдер (`Microsoft.EntityFrameworkCore.InMemory`). Тестовые сервисы настраиваются через `ServiceCollection`: регистрируются `AppDbContext` и сервисы приложения.
+Unit-тесты находятся в `EventApi.Tests`. В них используется EF Core InMemory-провайдер (`Microsoft.EntityFrameworkCore.InMemory`). Тестовые сервисы настраиваются через `ServiceCollection`: регистрируются `AppDbContext`, репозитории и сервисы приложения.
 
 Для каждого тестового класса создается уникальное имя InMemory-базы через `Guid.NewGuid().ToString()`. Имя базы сохраняется в переменную перед вызовом `UseInMemoryDatabase`, чтобы все scope внутри одного тестового класса работали с одной и той же InMemory-базой.
 
 В тестах конкурентности каждый параллельный запрос создает отдельный DI scope и получает собственный scoped `AppDbContext`.
 
+Интеграционные тесты находятся в `EventApi.IntegrationTests`. Они используют `Testcontainers.PostgreSql` и поднимают один общий контейнер PostgreSQL через fixture с `IAsyncLifetime`. Перед каждым тестом база приводится к чистому состоянию через `EnsureDeletedAsync()` и `MigrateAsync()`, поэтому тесты изолированы и не зависят от порядка запуска.
+
+Интеграционные тесты покрывают:
+- все методы `EventRepository` и `BookingRepository`
+- фильтрацию событий по `title`, `from`, `to`
+- комбинированные фильтры и пагинацию
+- обновление и удаление данных
+- внешний ключ `Bookings.EventId -> Events.Id`
+- миграционную схему: таблицы, primary key, identity-генерацию, ограничения колонок и связи
+
 Запуск тестов из корня репозитория:
 
 ```powershell
-dotnet test EventService.Tests/EventService.Tests.csproj
+dotnet test EventApi.sln
 ```
