@@ -9,6 +9,8 @@ public class Event
 
     public Event(string title, string? description, DateTime startAt, DateTime endAt, int totalSeats = 1)
     {
+        Validate(title, startAt, endAt, totalSeats);
+
         Title = title;
         Description = description;
         StartAt = startAt;
@@ -33,10 +35,28 @@ public class Event
         DateTime endAt,
         int totalSeats)
     {
-        if (totalSeats <= 0)
-            throw new ArgumentOutOfRangeException(nameof(totalSeats), "TotalSeats must be greater than 0.");
-
         return new Event(title, description, startAt, endAt, totalSeats);
+    }
+
+    public void UpdateDetails(
+        string title,
+        string? description,
+        DateTime startAt,
+        DateTime endAt,
+        int totalSeats)
+    {
+        Validate(title, startAt, endAt, totalSeats);
+
+        var reservedSeats = TotalSeats - AvailableSeats;
+        if (totalSeats < reservedSeats)
+            throw new InvalidOperationException("TotalSeats cannot be less than reserved seats.");
+
+        Title = title;
+        Description = description;
+        StartAt = startAt;
+        EndAt = endAt;
+        TotalSeats = totalSeats;
+        AvailableSeats = totalSeats - reservedSeats;
     }
 
     public bool TryReserveSeats(int count = 1)
@@ -62,5 +82,16 @@ public class Event
         if (count <= 0)
             throw new ArgumentOutOfRangeException(nameof(count), "Seat count must be greater than 0.");
     }
-}
 
+    private static void Validate(string title, DateTime startAt, DateTime endAt, int totalSeats)
+    {
+        if (string.IsNullOrWhiteSpace(title))
+            throw new ArgumentException("Title is required.", nameof(title));
+
+        if (endAt <= startAt)
+            throw new ArgumentException("EndAt must be greater than StartAt.", nameof(endAt));
+
+        if (totalSeats <= 0)
+            throw new ArgumentOutOfRangeException(nameof(totalSeats), "TotalSeats must be greater than 0.");
+    }
+}

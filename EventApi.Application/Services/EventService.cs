@@ -1,8 +1,6 @@
-using System.ComponentModel.DataAnnotations;
 using EventApi.Application.Abstractions;
 using EventApi.Application.Common;
 using EventApi.Application.DTO;
-using EventApi.Application.Mapping;
 using EventApi.Domain.Entities;
 
 namespace EventApi.Application.Services;
@@ -25,11 +23,6 @@ public class EventService(IEventRepository eventRepository) : IEventService
 
     public async Task AddAsync(Event @event, CancellationToken cancellationToken = default)
     {
-        ValidateEvent(@event);
-
-        if (await eventRepository.ExistsAsync(@event.Id, cancellationToken))
-            throw new ValidationException("Event with the same Id already exists.");
-
         await eventRepository.AddAsync(@event, cancellationToken);
         await eventRepository.SaveChangesAsync(cancellationToken);
     }
@@ -65,20 +58,6 @@ public class EventService(IEventRepository eventRepository) : IEventService
         return true;
     }
 
-    public async Task UpdateAsync(Event @event, CancellationToken cancellationToken = default)
-    {
-        var existingEvent = await eventRepository.GetByIdAsync(@event.Id, cancellationToken);
-        if (existingEvent is null)
-            return;
-
-        ValidateEvent(@event);
-
-        if (!ReferenceEquals(existingEvent, @event))
-            existingEvent.CopyFrom(@event);
-
-        await eventRepository.SaveChangesAsync(cancellationToken);
-    }
-
     public async Task<bool> UpdateEventAsync(
         int id,
         EventRequest request,
@@ -88,26 +67,14 @@ public class EventService(IEventRepository eventRepository) : IEventService
         if (existingEvent is null)
             return false;
 
-        existingEvent.CopyFrom(request);
-        ValidateEvent(existingEvent);
+        existingEvent.UpdateDetails(
+            request.Title!,
+            request.Description,
+            request.StartAt,
+            request.EndAt,
+            request.TotalSeats!.Value);
 
         await eventRepository.SaveChangesAsync(cancellationToken);
         return true;
     }
-
-    private static void ValidateEvent(Event @event)
-    {
-        if (string.IsNullOrWhiteSpace(@event.Title))
-            throw new ValidationException("Title is required.");
-
-        if (@event.EndAt <= @event.StartAt)
-            throw new ValidationException("EndAt must be greater than StartAt.");
-
-        if (@event.TotalSeats <= 0)
-            throw new ValidationException("TotalSeats must be greater than 0.");
-
-        if (@event.AvailableSeats < 0 || @event.AvailableSeats > @event.TotalSeats)
-            throw new ValidationException("AvailableSeats must be between 0 and TotalSeats.");
-    }
 }
-

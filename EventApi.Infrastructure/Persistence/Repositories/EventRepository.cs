@@ -59,7 +59,7 @@ public class EventRepository(AppDbContext context) : IEventRepository
             TotalCount = totalCount,
             Items = items,
             Page = page,
-            PageSize = items.Length
+            PageSize = pageSize
         };
     }
 

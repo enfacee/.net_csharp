@@ -2,7 +2,6 @@ using EventApi.Application.Abstractions;
 using EventApi.Application.Common;
 using EventApi.Application.DTO;
 using EventApi.Application.Mapping;
-using EventApi.Domain.Entities;
 using Microsoft.AspNetCore.Mvc;
 
 namespace EventApi.Presentation.Controllers;
@@ -24,7 +23,7 @@ public class EventsController(IEventService eventService, IBookingService bookin
         return Ok(new PaginatedResult<EventResponse>
         {
             TotalCount = result.TotalCount,
-            Items = result.Items.Select(e => e.CreateFrom<Event, EventResponse>()).ToArray(),
+            Items = result.Items.Select(e => e.ToResponse()).ToArray(),
             Page = result.Page,
             PageSize = result.PageSize
         });
@@ -33,7 +32,7 @@ public class EventsController(IEventService eventService, IBookingService bookin
     public async Task<ActionResult<EventResponse>> GetById(int id)
     {
         if (await eventService.GetByIdAsync(id) is {} @event)
-            return Ok(@event.CreateFrom<Event, EventResponse>());
+            return Ok(@event.ToResponse());
         return NotFound();
     }
     [HttpPost]
@@ -45,7 +44,7 @@ public class EventsController(IEventService eventService, IBookingService bookin
             request.StartAt,
             request.EndAt,
             request.TotalSeats!.Value);
-        var response = @event.CreateFrom<Event, EventResponse>();
+        var response = @event.ToResponse();
         return CreatedAtAction(nameof(GetById), new { id = response.Id }, response);
     }
 
@@ -54,7 +53,7 @@ public class EventsController(IEventService eventService, IBookingService bookin
     public async Task<ActionResult<BookingResponse>> CreateBooking(int id)
     {
         var booking = await bookingService.CreateBookingAsync(id);
-        var response = booking.CreateFrom<Booking, BookingResponse>();
+        var response = booking.ToResponse();
 
         return AcceptedAtRoute(
             BookingsController.GetByIdRouteName,

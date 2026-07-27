@@ -1,4 +1,3 @@
-using System.ComponentModel.DataAnnotations;
 using EventApi.Application.Abstractions;
 using EventApi.Application.DTO;
 using EventApi.Application.Services;
@@ -62,7 +61,7 @@ public class EventServiceTests : IDisposable
 
         result.TotalCount.Should().Be(2);
         result.Page.Should().Be(1);
-        result.PageSize.Should().Be(2);
+        result.PageSize.Should().Be(10);
         result.Items.Select(x => x.Title).Should().ContainInOrder("Team sync", "Client sync");
     }
 
@@ -80,7 +79,7 @@ public class EventServiceTests : IDisposable
             Description = "Updated description",
             StartAt = @event.StartAt,
             EndAt = @event.StartAt.AddHours(2),
-            TotalSeats = @event.TotalSeats
+            TotalSeats = 7
         };
 
         var updated = await service.UpdateEventAsync(@event.Id, request);
@@ -92,6 +91,8 @@ public class EventServiceTests : IDisposable
         result!.Title.Should().Be("Updated sprint planning");
         result.Description.Should().Be("Updated description");
         result.EndAt.Should().Be(@event.StartAt.AddHours(2));
+        result.TotalSeats.Should().Be(7);
+        result.AvailableSeats.Should().Be(7);
     }
 
     [Fact]
@@ -109,16 +110,14 @@ public class EventServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task AddAsync_ShouldThrowValidationException_WhenTitleIsInvalid()
+    public void Create_ShouldThrowArgumentException_WhenTitleIsInvalid()
     {
-        using var scope = _serviceProvider.CreateScope();
-        var service = scope.ServiceProvider.GetRequiredService<IEventService>();
         var startAt = new DateTime(2026, 05, 10, 9, 0, 0, DateTimeKind.Utc);
         var endAt = startAt.AddHours(1);
 
-        Func<Task> act = () => service.AddAsync(new Event("   ", null, startAt, endAt));
+        Action act = () => new Event("   ", null, startAt, endAt);
 
-        await act.Should().ThrowAsync<ValidationException>()
+        act.Should().Throw<ArgumentException>()
             .WithMessage("*Title is required*");
     }
 
@@ -153,6 +152,23 @@ public class EventServiceTests : IDisposable
 
         @event.ReleaseSeats(5);
 
+        @event.AvailableSeats.Should().Be(3);
+    }
+
+    [Fact]
+    public void UpdateDetails_ShouldKeepReservedSeats_WhenTotalSeatsChanges()
+    {
+        var @event = CreateEvent("Limited event", totalSeats: 3);
+        @event.TryReserveSeats(2);
+
+        @event.UpdateDetails(
+            "Expanded event",
+            "Updated capacity",
+            @event.StartAt,
+            @event.EndAt,
+            totalSeats: 5);
+
+        @event.TotalSeats.Should().Be(5);
         @event.AvailableSeats.Should().Be(3);
     }
 

@@ -1,7 +1,6 @@
 using EventApi.Application.Abstractions;
 using EventApi.Application.DTO;
 using EventApi.Application.Mapping;
-using EventApi.Domain.Entities;
 using Microsoft.AspNetCore.Mvc;
 
 namespace EventApi.Presentation.Controllers;
@@ -18,7 +17,7 @@ public class BookingsController(IBookingService bookingService) : ControllerBase
         if (await bookingService.GetBookingByIdAsync(id) is not { } booking)
             return NotFound();
 
-        return Ok(booking.CreateFrom<Booking, BookingResponse>());
+        return Ok(booking.ToResponse());
     }
 }
 

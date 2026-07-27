@@ -50,7 +50,7 @@ public sealed class EventRepositoryTests(PostgreSqlContainerFixture fixture) : I
 
         Assert.Equal(3, result.TotalCount);
         Assert.Equal(1, result.Page);
-        Assert.Equal(3, result.PageSize);
+        Assert.Equal(10, result.PageSize);
         Assert.Equal(["Second", "First", "Third"], result.Items.Select(@event => @event.Title).ToArray());
     }
 

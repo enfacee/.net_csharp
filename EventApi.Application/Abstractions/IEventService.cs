@@ -24,7 +24,6 @@ public interface IEventService
 
     Task<Event?> GetByIdAsync(int id, CancellationToken cancellationToken = default);
     Task AddAsync(Event @event, CancellationToken cancellationToken = default);
-    Task UpdateAsync(Event @event, CancellationToken cancellationToken = default);
     Task<bool> UpdateEventAsync(int id, EventRequest request, CancellationToken cancellationToken = default);
     Task<bool> RemoveAsync(int id, CancellationToken cancellationToken = default);
 }
