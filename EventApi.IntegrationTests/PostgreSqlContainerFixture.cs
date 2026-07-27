@@ -1,4 +1,4 @@
-using EventApi;
+using EventApi.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Testcontainers.PostgreSql;
 

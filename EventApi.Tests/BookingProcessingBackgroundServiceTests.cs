@@ -1,6 +1,11 @@
 using System.Diagnostics;
 using System.Reflection;
-using EventApi;
+using EventApi.Application;
+using EventApi.Application.Abstractions;
+using EventApi.Domain.Entities;
+using EventApi.Infrastructure.BackgroundServices;
+using EventApi.Infrastructure.Persistence;
+using EventApi.Infrastructure.Persistence.Repositories;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -15,7 +20,7 @@ public class BookingProcessingBackgroundServiceTests
     {
         var databaseName = Guid.NewGuid().ToString();
         await using var seedContext = CreateContext(databaseName);
-        var booking = new Booking(eventId: 999999);
+        var booking = new Booking(eventId: 999999, CreatedAt);
         seedContext.Bookings.Add(booking);
         await seedContext.SaveChangesAsync();
         var service = CreateService(databaseName);
@@ -39,7 +44,8 @@ public class BookingProcessingBackgroundServiceTests
         {
             var @event = CreateTestEvent(totalSeats: 1);
             seedContext.Events.Add(@event);
-            seedContext.Bookings.Add(new Booking(@event.Id));
+            await seedContext.SaveChangesAsync();
+            seedContext.Bookings.Add(new Booking(@event.Id, CreatedAt));
         }
 
         await seedContext.SaveChangesAsync();
@@ -61,6 +67,7 @@ public class BookingProcessingBackgroundServiceTests
         services.AddDbContext<AppDbContext>(options => options.UseInMemoryDatabase(databaseName));
         services.AddScoped<IEventRepository, EventRepository>();
         services.AddScoped<IBookingRepository, BookingRepository>();
+        services.AddApplicationServices();
         var provider = services.BuildServiceProvider();
 
         return new BookingProcessingBackgroundService(
@@ -94,5 +101,7 @@ public class BookingProcessingBackgroundServiceTests
         var startAt = new DateTime(2026, 05, 22, 10, 0, 0, DateTimeKind.Utc);
         return new Event("Background test event", null, startAt, startAt.AddHours(1), totalSeats);
     }
+
+    private static DateTime CreatedAt => new(2026, 05, 22, 10, 0, 0, DateTimeKind.Utc);
 }
 

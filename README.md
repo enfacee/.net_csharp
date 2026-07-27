@@ -5,7 +5,7 @@
 1. Откройте терминал в корне репозитория (папка, где лежит `EventApi.sln`).
 2. Запустите PostgreSQL:
    - `docker compose -f docker-compose_.yml up -d`
-3. Проверьте строку подключения в `EventApi/appsettings.json`.
+3. Проверьте локальный `EventApi/appsettings.Development.json` или настройте строку подключения через user-secrets/переменную окружения.
 4. Запустите API:
    - `dotnet run --project EventApi/EventApi.csproj`
 5. Проверьте, что API запущен:
@@ -19,6 +19,27 @@
 
 Swagger в режиме Development:
 - `https://localhost:7209/swagger`
+
+## Структура проекта
+
+Solution разделён на четыре сборки:
+
+- `EventApi.Domain` — доменные сущности, перечисления и доменные исключения. Не содержит ссылок на EF Core, ASP.NET Core и другие внешние фреймворки.
+- `EventApi.Application` — use cases, бизнес-сервисы, DTO, общие модели ответа, mapping helpers и интерфейсы портов (`IEventRepository`, `IBookingRepository` и сервисные интерфейсы). Зависит только от `EventApi.Domain`.
+- `EventApi.Infrastructure` — реализации портов, `AppDbContext`, EF Core configurations, миграции, репозитории и background service. Зависит от `EventApi.Application` и `EventApi.Domain`.
+- `EventApi` — Presentation/API: controllers, HTTP mapping, global exception middleware и composition root в `Program.cs`. Зависит от `EventApi.Application` и `EventApi.Infrastructure`.
+
+Направление зависимостей:
+
+```text
+                 Presentation
+              /               \
+             v                 v
+   Application <----------- Infrastructure
+            \                 /
+             v               v
+                    Domain
+```
 
 ## База данных
 
@@ -36,30 +57,32 @@ docker compose -f docker-compose_.yml up -d
 docker compose -f docker-compose_.yml down
 ```
 
-Текущая строка подключения находится в `EventApi/appsettings.json`:
+В `EventApi/appsettings.json` ключ `ConnectionStrings:DefaultConnection` намеренно пустой, чтобы не хранить пароль в репозитории.
+
+Для локальной разработки можно держать строку подключения в `EventApi/appsettings.Development.json`. Этот файл добавлен в `.gitignore` и не должен отслеживаться git-ом. Локальный пример для PostgreSQL из `docker-compose_.yml`:
 
 ```json
 {
   "ConnectionStrings": {
-    "DefaultConnection": "Host=localhost;Port=5433;Database=eventapi;Username=postgres;Password=postgres"
+    "DefaultConnection": "Host=localhost;Port=5433;Database=eventapi;Username=postgres;Password=<local-password>"
   }
 }
 ```
 
 Если PostgreSQL запущен не через этот compose-файл, измените `Host`, `Port`, `Database`, `Username` и `Password` под вашу локальную конфигурацию. Например, если PostgreSQL слушает стандартный порт, укажите `Port=5432`.
 
-Схема БД применяется автоматически при запуске приложения через `db.Database.Migrate()` в `Program.cs`. Начальная миграция находится в `EventApi/Migrations`.
+Схема БД применяется автоматически при запуске приложения через `MigrateInfrastructureDatabase()` из `EventApi.Infrastructure`. Начальная миграция находится в `EventApi.Infrastructure/Persistence/Migrations`.
 
 Создать новую миграцию:
 
 ```powershell
-dotnet ef migrations add <MigrationName> --project EventApi/EventApi.csproj --startup-project EventApi/EventApi.csproj
+dotnet ef migrations add <MigrationName> --project EventApi.Infrastructure/EventApi.Infrastructure.csproj --startup-project EventApi/EventApi.csproj --context AppDbContext --output-dir Persistence/Migrations
 ```
 
 Применить миграции вручную:
 
 ```powershell
-dotnet ef database update --project EventApi/EventApi.csproj --startup-project EventApi/EventApi.csproj
+dotnet ef database update --project EventApi.Infrastructure/EventApi.Infrastructure.csproj --startup-project EventApi/EventApi.csproj --context AppDbContext
 ```
 
 ## Краткая документация API
@@ -112,7 +135,7 @@ GET /events?title=meet&from=2026-05-01T00:00:00&to=2026-05-31T23:59:59&page=1&pa
     }
   ],
   "page": 1,
-  "pageSize": 1
+  "pageSize": 5
 }
 ```
 
@@ -332,11 +355,11 @@ GET /bookings/1
 
 ## Репозитории
 
-Доступ к данным инкапсулирован в репозиториях:
+Доступ к данным инкапсулирован в репозиториях слоя Infrastructure:
 - `EventRepository` работает с событиями
 - `BookingRepository` работает с бронированиями
 
-Сервисы не обращаются к `AppDbContext` напрямую. В сервисах остается бизнес-логика: валидация, резервирование мест, обработка статусов и orchestration. Репозитории содержат только логику доступа к данным: запросы, добавление, удаление и сохранение изменений.
+Интерфейсы репозиториев объявлены в `EventApi.Application.Abstractions`, реализации находятся в `EventApi.Infrastructure.Persistence.Repositories`. Сервисы Application не обращаются к `AppDbContext` напрямую. В сервисах остается бизнес-логика: валидация, резервирование мест, обработка статусов и orchestration. Репозитории содержат только логику доступа к данным: запросы, добавление, удаление и сохранение изменений.
 
 ## Пример овербукинга
 
@@ -366,6 +389,8 @@ Unit-тесты находятся в `EventApi.Tests`. В них использ
 В тестах конкурентности каждый параллельный запрос создает отдельный DI scope и получает собственный scoped `AppDbContext`.
 
 Интеграционные тесты находятся в `EventApi.IntegrationTests`. Они используют `Testcontainers.PostgreSql` и поднимают один общий контейнер PostgreSQL через fixture с `IAsyncLifetime`. Перед каждым тестом база приводится к чистому состоянию через `EnsureDeletedAsync()` и `MigrateAsync()`, поэтому тесты изолированы и не зависят от порядка запуска.
+
+Оба тестовых проекта напрямую ссылаются только на `EventApi.Infrastructure`; `EventApi.Application` и `EventApi.Domain` доступны транзитивно через Infrastructure. Тесты не зависят от Presentation-проекта `EventApi`.
 
 Интеграционные тесты покрывают:
 - все методы `EventRepository` и `BookingRepository`

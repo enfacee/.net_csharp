@@ -1,9 +1,10 @@
 using System.ComponentModel.DataAnnotations;
 using System.Runtime.ExceptionServices;
+using EventApi.Domain.Exceptions;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.WebUtilities;
 
-namespace EventApi;
+namespace EventApi.Presentation.Middleware;
 
 public sealed class GlobalExceptionHandlingMiddleware(
     RequestDelegate next,

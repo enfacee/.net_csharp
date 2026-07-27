@@ -1,6 +1,7 @@
 using System.Text.Json.Serialization;
-using EventApi;
-using Microsoft.EntityFrameworkCore;
+using EventApi.Application;
+using EventApi.Infrastructure;
+using EventApi.Presentation.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -12,13 +13,8 @@ builder.Services.AddProblemDetails(options =>
     };
 });
 builder.Services.AddSwaggerGen();
-builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
-builder.Services.AddScoped<IEventRepository, EventRepository>();
-builder.Services.AddScoped<IBookingRepository, BookingRepository>();
-builder.Services.AddScoped<IEventService, EventService>();
-builder.Services.AddScoped<IBookingService, BookingService>();
-builder.Services.AddHostedService<BookingProcessingBackgroundService>();
+builder.Services.AddApplicationServices();
+builder.Services.AddInfrastructureServices(builder.Configuration.GetConnectionString("DefaultConnection"));
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
@@ -27,18 +23,14 @@ builder.Services.AddControllers()
 
 var app = builder.Build();
 
-using (var scope = app.Services.CreateScope())
-{
-    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-    db.Database.Migrate();
-}
+app.Services.MigrateInfrastructureDatabase();
 
 app.UseHttpsRedirection();
 app.UseMiddleware<GlobalExceptionHandlingMiddleware>();
 app.MapControllers();
 
 if (app.Environment.IsDevelopment())
-{    
+{
     app.UseSwagger();
     app.UseSwaggerUI();
 }

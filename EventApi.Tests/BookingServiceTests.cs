@@ -1,5 +1,10 @@
 using System.ComponentModel.DataAnnotations;
-using EventApi;
+using EventApi.Application.Abstractions;
+using EventApi.Application.Services;
+using EventApi.Domain.Entities;
+using EventApi.Domain.Exceptions;
+using EventApi.Infrastructure.Persistence;
+using EventApi.Infrastructure.Persistence.Repositories;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -16,6 +21,7 @@ public class BookingServiceTests : IDisposable
         var services = new ServiceCollection();
         services.AddDbContext<AppDbContext>(options =>
             options.UseInMemoryDatabase(dbName));
+        services.AddSingleton(TimeProvider.System);
         services.AddScoped<IEventRepository, EventRepository>();
         services.AddScoped<IBookingRepository, BookingRepository>();
         services.AddScoped<IBookingService, BookingService>();
@@ -163,18 +169,28 @@ public class BookingServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task CreateBookingAsync_ShouldThrowValidationException_WhenEventIdIsInvalid()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<IBookingService>();
+
+        Func<Task> act = () => service.CreateBookingAsync(0);
+
+        await act.Should().ThrowAsync<ValidationException>()
+            .WithMessage("*EventId must be greater than 0*");
+    }
+
+    [Fact]
     public void Confirm_ShouldSetConfirmedStatusAndProcessedAt()
     {
-        var booking = new Booking(eventId: 1);
-        var beforeConfirm = DateTime.UtcNow;
+        var createdAt = new DateTime(2026, 05, 22, 10, 0, 0, DateTimeKind.Utc);
+        var processedAt = createdAt.AddMinutes(5);
+        var booking = new Booking(eventId: 1, createdAt);
 
-        booking.Confirm();
+        booking.Confirm(processedAt);
 
-        var afterConfirm = DateTime.UtcNow;
         booking.Status.Should().Be(BookingStatus.Confirmed);
-        booking.ProcessedAt.Should().NotBeNull();
-        booking.ProcessedAt.Should().BeOnOrAfter(beforeConfirm);
-        booking.ProcessedAt.Should().BeOnOrBefore(afterConfirm);
+        booking.ProcessedAt.Should().Be(processedAt);
     }
 
     public void Dispose()

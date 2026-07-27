@@ -1,5 +1,4 @@
 using System.Data.Common;
-using EventApi;
 using Microsoft.EntityFrameworkCore;
 
 namespace EventApi.IntegrationTests;

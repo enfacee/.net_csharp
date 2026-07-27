@@ -1,6 +1,10 @@
+using EventApi.Application.Abstractions;
+using EventApi.Application.Common;
+using EventApi.Application.DTO;
+using EventApi.Application.Mapping;
 using Microsoft.AspNetCore.Mvc;
 
-namespace EventApi;
+namespace EventApi.Presentation.Controllers;
 
 [ApiController]
 [Route("[controller]")]
@@ -19,7 +23,7 @@ public class EventsController(IEventService eventService, IBookingService bookin
         return Ok(new PaginatedResult<EventResponse>
         {
             TotalCount = result.TotalCount,
-            Items = result.Items.Select(e => e.CreateFrom<Event, EventResponse>()).ToArray(),
+            Items = result.Items.Select(e => e.ToResponse()).ToArray(),
             Page = result.Page,
             PageSize = result.PageSize
         });
@@ -27,8 +31,8 @@ public class EventsController(IEventService eventService, IBookingService bookin
     [HttpGet("{id}")]
     public async Task<ActionResult<EventResponse>> GetById(int id)
     {
-        if (await eventService.GetByIdAsync(id) is {} @event)
-            return Ok(@event.CreateFrom<Event, EventResponse>());
+        if (await eventService.GetByIdAsync(id) is { } @event)
+            return Ok(@event.ToResponse());
         return NotFound();
     }
     [HttpPost]
@@ -40,16 +44,16 @@ public class EventsController(IEventService eventService, IBookingService bookin
             request.StartAt,
             request.EndAt,
             request.TotalSeats!.Value);
-        var response = @event.CreateFrom<Event, EventResponse>();
+        var response = @event.ToResponse();
         return CreatedAtAction(nameof(GetById), new { id = response.Id }, response);
     }
 
     [HttpPost("{id}/book")]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
-    public async Task<ActionResult<BookingResponse>> CreateBooking(int id)
+    public async Task<ActionResult<BookingResponse>> CreateBooking(int id, CancellationToken cancellationToken)
     {
-        var booking = await bookingService.CreateBookingAsync(id);
-        var response = booking.CreateFrom<Booking, BookingResponse>();
+        var booking = await bookingService.CreateBookingAsync(id, cancellationToken);
+        var response = booking.ToResponse();
 
         return AcceptedAtRoute(
             BookingsController.GetByIdRouteName,
@@ -60,10 +64,9 @@ public class EventsController(IEventService eventService, IBookingService bookin
     [HttpPut("{id}")]
     public async Task<ActionResult> Update(int id, [FromBody] EventRequest request)
     {
-        if (await eventService.GetByIdAsync(id) is not {} @event)
+        if (!await eventService.UpdateEventAsync(id, request))
             return NotFound();
-        @event.CopyFrom(request);
-        await eventService.UpdateAsync(@event);
+
         return Ok();
     }
 

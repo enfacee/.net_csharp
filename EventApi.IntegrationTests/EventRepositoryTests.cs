@@ -1,4 +1,5 @@
-using EventApi;
+using EventApi.Domain.Entities;
+using EventApi.Infrastructure.Persistence.Repositories;
 
 namespace EventApi.IntegrationTests;
 
@@ -49,7 +50,7 @@ public sealed class EventRepositoryTests(PostgreSqlContainerFixture fixture) : I
 
         Assert.Equal(3, result.TotalCount);
         Assert.Equal(1, result.Page);
-        Assert.Equal(3, result.PageSize);
+        Assert.Equal(10, result.PageSize);
         Assert.Equal(["Second", "First", "Third"], result.Items.Select(@event => @event.Title).ToArray());
     }
 
@@ -156,7 +157,12 @@ public sealed class EventRepositoryTests(PostgreSqlContainerFixture fixture) : I
         var persistedEvent = await repository.GetByIdAsync(@event.Id);
         Assert.NotNull(persistedEvent);
 
-        persistedEvent.Title = "Updated";
+        persistedEvent.UpdateDetails(
+            "Updated",
+            persistedEvent.Description,
+            persistedEvent.StartAt,
+            persistedEvent.EndAt,
+            persistedEvent.TotalSeats);
         await repository.SaveChangesAsync();
 
         await using var assertContext = fixture.CreateContext();
