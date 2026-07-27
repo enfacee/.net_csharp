@@ -1,7 +1,7 @@
 using EventApi.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 
-namespace EventApi;
+namespace EventApi.Infrastructure.Persistence;
 
 public sealed class AppDbContext : DbContext
 {

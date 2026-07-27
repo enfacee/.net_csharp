@@ -3,6 +3,8 @@ using EventApi;
 using EventApi.Application.Abstractions;
 using EventApi.Application.Services;
 using EventApi.Domain.Entities;
+using EventApi.Infrastructure.Persistence;
+using EventApi.Infrastructure.Persistence.Repositories;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;

@@ -1,9 +1,10 @@
 using EventApi.Application.Abstractions;
 using EventApi.Application.Common;
 using EventApi.Domain.Entities;
+using EventApi.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
-namespace EventApi;
+namespace EventApi.Infrastructure.Persistence.Repositories;
 
 public class EventRepository(AppDbContext context) : IEventRepository
 {

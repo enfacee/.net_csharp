@@ -1,5 +1,5 @@
-using EventApi;
 using EventApi.Domain.Entities;
+using EventApi.Infrastructure.Persistence.Repositories;
 
 namespace EventApi.IntegrationTests;
 

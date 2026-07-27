@@ -1,7 +1,10 @@
 using EventApi.Application.Abstractions;
 using EventApi.Domain.Entities;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 
-namespace EventApi;
+namespace EventApi.Infrastructure.BackgroundServices;
 
 public class BookingProcessingBackgroundService(
     IServiceScopeFactory scopeFactory,

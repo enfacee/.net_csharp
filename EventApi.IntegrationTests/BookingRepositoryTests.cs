@@ -1,5 +1,5 @@
-using EventApi;
 using EventApi.Domain.Entities;
+using EventApi.Infrastructure.Persistence.Repositories;
 using Microsoft.EntityFrameworkCore;
 
 namespace EventApi.IntegrationTests;

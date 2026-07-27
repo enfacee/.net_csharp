@@ -1,8 +1,9 @@
 using EventApi.Application.Abstractions;
 using EventApi.Domain.Entities;
+using EventApi.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 
-namespace EventApi;
+namespace EventApi.Infrastructure.Persistence.Repositories;
 
 public class BookingRepository(AppDbContext context) : IBookingRepository
 {

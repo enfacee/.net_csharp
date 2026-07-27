@@ -2,7 +2,7 @@ using EventApi.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
-namespace EventApi;
+namespace EventApi.Infrastructure.Persistence.Configurations;
 
 internal sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
 {
