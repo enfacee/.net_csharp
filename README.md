@@ -5,7 +5,7 @@
 1. Откройте терминал в корне репозитория (папка, где лежит `EventApi.sln`).
 2. Запустите PostgreSQL:
    - `docker compose -f docker-compose_.yml up -d`
-3. Проверьте строку подключения в `EventApi/appsettings.json`.
+3. Проверьте локальный `EventApi/appsettings.Development.json` или настройте строку подключения через user-secrets/переменную окружения.
 4. Запустите API:
    - `dotnet run --project EventApi/EventApi.csproj`
 5. Проверьте, что API запущен:
@@ -57,12 +57,14 @@ docker compose -f docker-compose_.yml up -d
 docker compose -f docker-compose_.yml down
 ```
 
-Текущая строка подключения находится в `EventApi/appsettings.json`:
+В `EventApi/appsettings.json` ключ `ConnectionStrings:DefaultConnection` намеренно пустой, чтобы не хранить пароль в репозитории.
+
+Для локальной разработки можно держать строку подключения в `EventApi/appsettings.Development.json`. Этот файл добавлен в `.gitignore` и не должен отслеживаться git-ом. Локальный пример для PostgreSQL из `docker-compose_.yml`:
 
 ```json
 {
   "ConnectionStrings": {
-    "DefaultConnection": "Host=localhost;Port=5433;Database=eventapi;Username=postgres;Password=postgres"
+    "DefaultConnection": "Host=localhost;Port=5433;Database=eventapi;Username=postgres;Password=<local-password>"
   }
 }
 ```
@@ -133,7 +135,7 @@ GET /events?title=meet&from=2026-05-01T00:00:00&to=2026-05-31T23:59:59&page=1&pa
     }
   ],
   "page": 1,
-  "pageSize": 1
+  "pageSize": 5
 }
 ```
 

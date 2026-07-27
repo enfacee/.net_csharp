@@ -23,7 +23,7 @@ public sealed class BookingRepositoryTests(PostgreSqlContainerFixture fixture) :
         var @event = await SeedEventAsync();
         await using var context = fixture.CreateContext();
         var repository = new BookingRepository(context);
-        var booking = new Booking(@event.Id);
+        var booking = CreateBooking(@event.Id);
 
         await repository.AddAsync(booking);
         await repository.SaveChangesAsync();
@@ -44,7 +44,7 @@ public sealed class BookingRepositoryTests(PostgreSqlContainerFixture fixture) :
         await using var context = fixture.CreateContext();
         var repository = new BookingRepository(context);
 
-        await repository.AddAsync(new Booking(eventId: 999999));
+        await repository.AddAsync(CreateBooking(eventId: 999999));
 
         await Assert.ThrowsAsync<DbUpdateException>(() => repository.SaveChangesAsync());
     }
@@ -53,10 +53,10 @@ public sealed class BookingRepositoryTests(PostgreSqlContainerFixture fixture) :
     public async Task GetPendingBookingsAsync_ShouldReturnOnlyPendingBookingsOrderedById()
     {
         var @event = await SeedEventAsync(totalSeats: 3);
-        var pending1 = new Booking(@event.Id);
-        var confirmed = new Booking(@event.Id);
-        confirmed.Confirm();
-        var pending2 = new Booking(@event.Id);
+        var pending1 = CreateBooking(@event.Id);
+        var confirmed = CreateBooking(@event.Id);
+        confirmed.Confirm(ProcessedAt);
+        var pending2 = CreateBooking(@event.Id);
         await SeedBookingsAsync(pending1, confirmed, pending2);
 
         await using var context = fixture.CreateContext();
@@ -72,10 +72,10 @@ public sealed class BookingRepositoryTests(PostgreSqlContainerFixture fixture) :
     public async Task GetPendingBookingIdsAsync_ShouldReturnOnlyPendingBookingIdsOrderedById()
     {
         var @event = await SeedEventAsync(totalSeats: 3);
-        var pending1 = new Booking(@event.Id);
-        var rejected = new Booking(@event.Id);
-        rejected.Reject();
-        var pending2 = new Booking(@event.Id);
+        var pending1 = CreateBooking(@event.Id);
+        var rejected = CreateBooking(@event.Id);
+        rejected.Reject(ProcessedAt);
+        var pending2 = CreateBooking(@event.Id);
         await SeedBookingsAsync(pending1, rejected, pending2);
 
         await using var context = fixture.CreateContext();
@@ -90,7 +90,7 @@ public sealed class BookingRepositoryTests(PostgreSqlContainerFixture fixture) :
     public async Task SaveChangesAsync_ShouldPersistTrackedBookingChanges()
     {
         var @event = await SeedEventAsync();
-        var booking = new Booking(@event.Id);
+        var booking = CreateBooking(@event.Id);
         await SeedBookingsAsync(booking);
 
         await using var context = fixture.CreateContext();
@@ -98,7 +98,7 @@ public sealed class BookingRepositoryTests(PostgreSqlContainerFixture fixture) :
         var persistedBooking = await repository.GetByIdAsync(booking.Id);
         Assert.NotNull(persistedBooking);
 
-        persistedBooking.Confirm();
+        persistedBooking.Confirm(ProcessedAt);
         await repository.SaveChangesAsync();
 
         await using var assertContext = fixture.CreateContext();
@@ -143,4 +143,12 @@ public sealed class BookingRepositoryTests(PostgreSqlContainerFixture fixture) :
 
         await repository.SaveChangesAsync();
     }
+
+    private static Booking CreateBooking(int eventId)
+    {
+        return new Booking(eventId, CreatedAt);
+    }
+
+    private static DateTime CreatedAt => new(2026, 05, 22, 10, 0, 0, DateTimeKind.Utc);
+    private static DateTime ProcessedAt => CreatedAt.AddMinutes(5);
 }

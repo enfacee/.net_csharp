@@ -6,3 +6,4 @@ obj/
 *.snupkg
 publish/
 *.log
+EventApi/appsettings.Development.json

@@ -57,25 +57,14 @@ public class BookingProcessingBackgroundService(
             await Task.Delay(ProcessingDelay, stoppingToken);
 
             using var scope = scopeFactory.CreateScope();
-            var bookingRepository = scope.ServiceProvider.GetRequiredService<IBookingRepository>();
-            var eventRepository = scope.ServiceProvider.GetRequiredService<IEventRepository>();
-            var booking = await bookingRepository.GetByIdAsync(bookingId, stoppingToken);
-            if (booking is null || booking.Status != BookingStatus.Pending)
+            var bookingService = scope.ServiceProvider.GetRequiredService<IBookingService>();
+            var booking = await bookingService.UpdateBookingStatusAsync(
+                bookingId,
+                BookingStatus.Confirmed,
+                stoppingToken);
+            if (booking is null)
                 return;
 
-            if (!await eventRepository.ExistsAsync(booking.EventId, stoppingToken))
-            {
-                booking.Reject();
-                await bookingRepository.SaveChangesAsync(stoppingToken);
-                logger.LogWarning(
-                    "Booking {BookingId} rejected because event {EventId} was not found.",
-                    booking.Id,
-                    booking.EventId);
-                return;
-            }
-
-            booking.Confirm();
-            await bookingRepository.SaveChangesAsync(stoppingToken);
             logger.LogInformation(
                 "Booking {BookingId} processed with status {Status}.",
                 booking.Id,
@@ -99,18 +88,11 @@ public class BookingProcessingBackgroundService(
         logger.LogError(exception, "Failed to process booking {BookingId}.", bookingId);
 
         using var scope = scopeFactory.CreateScope();
-        var bookingRepository = scope.ServiceProvider.GetRequiredService<IBookingRepository>();
-        var eventRepository = scope.ServiceProvider.GetRequiredService<IEventRepository>();
-        var booking = await bookingRepository.GetByIdAsync(bookingId, stoppingToken);
-        if (booking is null)
-            return;
-
-        booking.Reject();
-
-        if (await eventRepository.GetByIdAsync(booking.EventId, stoppingToken) is { } @event)
-            @event.ReleaseSeats();
-
-        await bookingRepository.SaveChangesAsync(stoppingToken);
+        var bookingService = scope.ServiceProvider.GetRequiredService<IBookingService>();
+        await bookingService.UpdateBookingStatusAsync(
+            bookingId,
+            BookingStatus.Rejected,
+            stoppingToken);
     }
 }
 

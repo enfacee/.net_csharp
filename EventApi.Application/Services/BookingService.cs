@@ -7,29 +7,28 @@ namespace EventApi.Application.Services;
 
 public class BookingService(
     IBookingRepository bookingRepository,
-    IEventRepository eventRepository) : IBookingService
+    IEventRepository eventRepository,
+    TimeProvider timeProvider) : IBookingService
 {
     private static readonly SemaphoreSlim BookingSemaphore = new(1, 1);
 
-    public async Task<Booking> CreateBookingAsync(int eventId)
+    public async Task<Booking> CreateBookingAsync(int eventId, CancellationToken cancellationToken = default)
     {
         ValidateEventId(eventId);
 
-        await BookingSemaphore.WaitAsync();
+        await BookingSemaphore.WaitAsync(cancellationToken);
         try
         {
-            var @event = await eventRepository.GetByIdAsync(eventId)
+            var @event = await eventRepository.GetByIdAsync(eventId, cancellationToken)
                 ?? throw new NotFoundException("Event not found.");
 
             if (!@event.TryReserveSeats())
                 throw new NoAvailableSeatsException("No available seats for this event");
 
-            var booking = new Booking(eventId);
-            if (await bookingRepository.ExistsAsync(booking.Id))
-                throw new ValidationException("Booking with the same Id already exists.");
+            var booking = new Booking(eventId, timeProvider.GetUtcNow().UtcDateTime);
 
-            await bookingRepository.AddAsync(booking);
-            await bookingRepository.SaveChangesAsync();
+            await bookingRepository.AddAsync(booking, cancellationToken);
+            await bookingRepository.SaveChangesAsync(cancellationToken);
 
             return booking;
         }
@@ -67,10 +66,19 @@ public class BookingService(
                 return booking;
 
             if (status == BookingStatus.Confirmed)
-                booking.Confirm();
+            {
+                if (!await eventRepository.ExistsAsync(booking.EventId, cancellationToken))
+                {
+                    booking.Reject(timeProvider.GetUtcNow().UtcDateTime);
+                    await bookingRepository.SaveChangesAsync(cancellationToken);
+                    return booking;
+                }
+
+                booking.Confirm(timeProvider.GetUtcNow().UtcDateTime);
+            }
             else
             {
-                booking.Reject();
+                booking.Reject(timeProvider.GetUtcNow().UtcDateTime);
 
                 if (await eventRepository.GetByIdAsync(booking.EventId, cancellationToken) is { } @event)
                     @event.ReleaseSeats();
@@ -89,7 +97,7 @@ public class BookingService(
     private static void ValidateEventId(int eventId)
     {
         if (eventId <= 0)
-            throw new ValidationException("EventId is required.");
+            throw new ValidationException("EventId must be greater than 0.");
     }
 }
 

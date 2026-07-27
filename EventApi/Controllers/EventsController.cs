@@ -31,7 +31,7 @@ public class EventsController(IEventService eventService, IBookingService bookin
     [HttpGet("{id}")]
     public async Task<ActionResult<EventResponse>> GetById(int id)
     {
-        if (await eventService.GetByIdAsync(id) is {} @event)
+        if (await eventService.GetByIdAsync(id) is { } @event)
             return Ok(@event.ToResponse());
         return NotFound();
     }
@@ -50,9 +50,9 @@ public class EventsController(IEventService eventService, IBookingService bookin
 
     [HttpPost("{id}/book")]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
-    public async Task<ActionResult<BookingResponse>> CreateBooking(int id)
+    public async Task<ActionResult<BookingResponse>> CreateBooking(int id, CancellationToken cancellationToken)
     {
-        var booking = await bookingService.CreateBookingAsync(id);
+        var booking = await bookingService.CreateBookingAsync(id, cancellationToken);
         var response = booking.ToResponse();
 
         return AcceptedAtRoute(

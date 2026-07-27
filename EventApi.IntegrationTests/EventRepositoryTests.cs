@@ -157,7 +157,12 @@ public sealed class EventRepositoryTests(PostgreSqlContainerFixture fixture) : I
         var persistedEvent = await repository.GetByIdAsync(@event.Id);
         Assert.NotNull(persistedEvent);
 
-        persistedEvent.Title = "Updated";
+        persistedEvent.UpdateDetails(
+            "Updated",
+            persistedEvent.Description,
+            persistedEvent.StartAt,
+            persistedEvent.EndAt,
+            persistedEvent.TotalSeats);
         await repository.SaveChangesAsync();
 
         await using var assertContext = fixture.CreateContext();
