@@ -1,4 +1,4 @@
-namespace EventApi;
+namespace EventApi.Application.Mapping;
 
 public static class ReflectionService
 {

@@ -1,3 +1,4 @@
+using EventApi.Application.Abstractions;
 using EventApi.Domain.Entities;
 using Microsoft.EntityFrameworkCore;
 

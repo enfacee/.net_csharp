@@ -1,4 +1,4 @@
-namespace EventApi;
+namespace EventApi.Application.Common;
 
 public class PaginatedResult<T>
 {

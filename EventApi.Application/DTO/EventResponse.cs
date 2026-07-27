@@ -1,4 +1,4 @@
-namespace EventApi;
+namespace EventApi.Application.DTO;
 
 public class EventResponse
 {

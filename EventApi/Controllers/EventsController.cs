@@ -1,3 +1,7 @@
+using EventApi.Application.Abstractions;
+using EventApi.Application.Common;
+using EventApi.Application.DTO;
+using EventApi.Application.Mapping;
 using EventApi.Domain.Entities;
 using Microsoft.AspNetCore.Mvc;
 

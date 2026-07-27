@@ -1,5 +1,7 @@
 using System.Text.Json.Serialization;
 using EventApi;
+using EventApi.Application;
+using EventApi.Application.Abstractions;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -16,8 +18,7 @@ builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseNpgsql(builder.Configuration.GetConnectionString("DefaultConnection")));
 builder.Services.AddScoped<IEventRepository, EventRepository>();
 builder.Services.AddScoped<IBookingRepository, BookingRepository>();
-builder.Services.AddScoped<IEventService, EventService>();
-builder.Services.AddScoped<IBookingService, BookingService>();
+builder.Services.AddApplicationServices();
 builder.Services.AddHostedService<BookingProcessingBackgroundService>();
 builder.Services.AddControllers()
     .AddJsonOptions(options =>

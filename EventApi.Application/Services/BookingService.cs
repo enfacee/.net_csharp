@@ -1,8 +1,9 @@
 using System.ComponentModel.DataAnnotations;
+using EventApi.Application.Abstractions;
 using EventApi.Domain.Entities;
 using EventApi.Domain.Exceptions;
 
-namespace EventApi;
+namespace EventApi.Application.Services;
 
 public class BookingService(
     IBookingRepository bookingRepository,

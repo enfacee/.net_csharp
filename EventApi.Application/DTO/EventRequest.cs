@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 
-namespace EventApi;
+namespace EventApi.Application.DTO;
 
 public class EventRequest : IValidatableObject
 {

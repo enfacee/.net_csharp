@@ -1,7 +1,10 @@
 using System.ComponentModel.DataAnnotations;
+using EventApi.Application.Abstractions;
+using EventApi.Application.Common;
+using EventApi.Application.Mapping;
 using EventApi.Domain.Entities;
 
-namespace EventApi;
+namespace EventApi.Application.Services;
 
 public class EventService(IEventRepository eventRepository) : IEventService
 {

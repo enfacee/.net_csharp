@@ -1,17 +1,12 @@
+using EventApi.Application.Common;
 using EventApi.Domain.Entities;
 
-namespace EventApi;
+namespace EventApi.Application.Abstractions;
 
-public interface IEventService
+public interface IEventRepository
 {
-    Task<Event> CreateEventAsync(
-        string title,
-        string? description,
-        DateTime startAt,
-        DateTime endAt,
-        int totalSeats,
-        CancellationToken cancellationToken = default);
-
+    Task AddAsync(Event @event, CancellationToken cancellationToken = default);
+    Task<bool> ExistsAsync(int id, CancellationToken cancellationToken = default);
     Task<PaginatedResult<Event>> GetAllAsync(
         string? title = null,
         DateTime? from = null,
@@ -19,10 +14,7 @@ public interface IEventService
         int page = 1,
         int pageSize = 10,
         CancellationToken cancellationToken = default);
-
     Task<Event?> GetByIdAsync(int id, CancellationToken cancellationToken = default);
-    Task AddAsync(Event @event, CancellationToken cancellationToken = default);
-    Task UpdateAsync(Event @event, CancellationToken cancellationToken = default);
     Task<bool> RemoveAsync(int id, CancellationToken cancellationToken = default);
+    Task SaveChangesAsync(CancellationToken cancellationToken = default);
 }
-

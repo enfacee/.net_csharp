@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using System.Reflection;
 using EventApi;
+using EventApi.Application.Abstractions;
 using EventApi.Domain.Entities;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
