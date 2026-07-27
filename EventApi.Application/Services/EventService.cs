@@ -1,6 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using EventApi.Application.Abstractions;
 using EventApi.Application.Common;
+using EventApi.Application.DTO;
 using EventApi.Application.Mapping;
 using EventApi.Domain.Entities;
 
@@ -76,6 +77,22 @@ public class EventService(IEventRepository eventRepository) : IEventService
             existingEvent.CopyFrom(@event);
 
         await eventRepository.SaveChangesAsync(cancellationToken);
+    }
+
+    public async Task<bool> UpdateEventAsync(
+        int id,
+        EventRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        var existingEvent = await eventRepository.GetByIdAsync(id, cancellationToken);
+        if (existingEvent is null)
+            return false;
+
+        existingEvent.CopyFrom(request);
+        ValidateEvent(existingEvent);
+
+        await eventRepository.SaveChangesAsync(cancellationToken);
+        return true;
     }
 
     private static void ValidateEvent(Event @event)

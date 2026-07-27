@@ -1,7 +1,7 @@
 using System.Text.Json.Serialization;
-using EventApi;
 using EventApi.Application;
 using EventApi.Infrastructure;
+using EventApi.Presentation.Middleware;
 
 var builder = WebApplication.CreateBuilder(args);
 

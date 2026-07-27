@@ -1,6 +1,6 @@
 using System.ComponentModel.DataAnnotations;
-using EventApi;
 using EventApi.Application.Abstractions;
+using EventApi.Application.DTO;
 using EventApi.Application.Services;
 using EventApi.Domain.Entities;
 using EventApi.Infrastructure.Persistence;
@@ -67,21 +67,27 @@ public class EventServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task UpdateAsync_ShouldUpdateExistingEvent()
+    public async Task UpdateEventAsync_ShouldUpdateExistingEvent()
     {
         using var scope = _serviceProvider.CreateScope();
         var service = scope.ServiceProvider.GetRequiredService<IEventService>();
         var @event = CreateEvent("Sprint planning");
         await service.AddAsync(@event);
 
-        @event.Title = "Updated sprint planning";
-        @event.Description = "Updated description";
-        @event.EndAt = @event.StartAt.AddHours(2);
+        var request = new EventRequest
+        {
+            Title = "Updated sprint planning",
+            Description = "Updated description",
+            StartAt = @event.StartAt,
+            EndAt = @event.StartAt.AddHours(2),
+            TotalSeats = @event.TotalSeats
+        };
 
-        await service.UpdateAsync(@event);
+        var updated = await service.UpdateEventAsync(@event.Id, request);
 
         var result = await service.GetByIdAsync(@event.Id);
 
+        updated.Should().BeTrue();
         result.Should().NotBeNull();
         result!.Title.Should().Be("Updated sprint planning");
         result.Description.Should().Be("Updated description");

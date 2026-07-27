@@ -5,7 +5,7 @@ using EventApi.Application.Mapping;
 using EventApi.Domain.Entities;
 using Microsoft.AspNetCore.Mvc;
 
-namespace EventApi;
+namespace EventApi.Presentation.Controllers;
 
 [ApiController]
 [Route("[controller]")]
@@ -65,10 +65,9 @@ public class EventsController(IEventService eventService, IBookingService bookin
     [HttpPut("{id}")]
     public async Task<ActionResult> Update(int id, [FromBody] EventRequest request)
     {
-        if (await eventService.GetByIdAsync(id) is not {} @event)
+        if (!await eventService.UpdateEventAsync(id, request))
             return NotFound();
-        @event.CopyFrom(request);
-        await eventService.UpdateAsync(@event);
+
         return Ok();
     }
 

@@ -4,7 +4,7 @@ using EventApi.Application.Mapping;
 using EventApi.Domain.Entities;
 using Microsoft.AspNetCore.Mvc;
 
-namespace EventApi;
+namespace EventApi.Presentation.Controllers;
 
 [ApiController]
 [Route("[controller]")]

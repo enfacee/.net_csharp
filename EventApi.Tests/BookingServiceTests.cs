@@ -1,5 +1,4 @@
 using System.ComponentModel.DataAnnotations;
-using EventApi;
 using EventApi.Application.Abstractions;
 using EventApi.Application.Services;
 using EventApi.Domain.Entities;
