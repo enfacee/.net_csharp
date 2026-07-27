@@ -1,5 +1,6 @@
 using System.ComponentModel.DataAnnotations;
 using EventApi;
+using EventApi.Domain.Entities;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -112,14 +113,14 @@ public class EventServiceTests : IDisposable
     }
 
     [Fact]
-    public void Create_ShouldThrowValidationException_WhenTotalSeatsIsInvalid()
+    public void Create_ShouldThrowArgumentOutOfRangeException_WhenTotalSeatsIsInvalid()
     {
         var startAt = new DateTime(2026, 05, 10, 9, 0, 0, DateTimeKind.Utc);
         var endAt = startAt.AddHours(1);
 
         Action act = () => Event.Create("Invalid capacity", null, startAt, endAt, totalSeats: 0);
 
-        act.Should().Throw<ValidationException>()
+        act.Should().Throw<ArgumentOutOfRangeException>()
             .WithMessage("*TotalSeats must be greater than 0*");
     }
 

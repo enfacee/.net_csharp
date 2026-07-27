@@ -1,5 +1,7 @@
 using System.ComponentModel.DataAnnotations;
 using EventApi;
+using EventApi.Domain.Entities;
+using EventApi.Domain.Exceptions;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;

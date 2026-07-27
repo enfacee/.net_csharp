@@ -1,4 +1,4 @@
-namespace EventApi;
+namespace EventApi.Domain.Entities;
 
 public enum BookingStatus
 {

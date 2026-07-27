@@ -1,3 +1,5 @@
+using EventApi.Domain.Entities;
+
 namespace EventApi;
 
 public class BookingResponse

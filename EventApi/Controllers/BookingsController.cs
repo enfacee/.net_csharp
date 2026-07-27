@@ -1,3 +1,4 @@
+using EventApi.Domain.Entities;
 using Microsoft.AspNetCore.Mvc;
 
 namespace EventApi;

@@ -1,4 +1,6 @@
 using System.ComponentModel.DataAnnotations;
+using EventApi.Domain.Entities;
+using EventApi.Domain.Exceptions;
 
 namespace EventApi;
 

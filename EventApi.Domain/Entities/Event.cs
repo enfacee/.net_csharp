@@ -1,6 +1,4 @@
-using System.ComponentModel.DataAnnotations;
-
-namespace EventApi;
+namespace EventApi.Domain.Entities;
 
 public class Event
 {
@@ -19,16 +17,11 @@ public class Event
         AvailableSeats = totalSeats;
     }
 
-    [Required]
     public int Id { get; private set; }
-    [Required]
     public string Title { get; set; }
     public string? Description { get; set; }
-    [Required]
     public DateTime StartAt { get; set; }
-    [Required]
     public DateTime EndAt { get; set; }
-    [Required]
     public int TotalSeats { get; private set; }
     public int AvailableSeats { get; private set; }
     public ICollection<Booking> Bookings { get; private set; } = [];
@@ -41,7 +34,7 @@ public class Event
         int totalSeats)
     {
         if (totalSeats <= 0)
-            throw new ValidationException("TotalSeats must be greater than 0.");
+            throw new ArgumentOutOfRangeException(nameof(totalSeats), "TotalSeats must be greater than 0.");
 
         return new Event(title, description, startAt, endAt, totalSeats);
     }
@@ -67,7 +60,7 @@ public class Event
     private static void ValidateSeatCount(int count)
     {
         if (count <= 0)
-            throw new ValidationException("Seat count must be greater than 0.");
+            throw new ArgumentOutOfRangeException(nameof(count), "Seat count must be greater than 0.");
     }
 }
 
