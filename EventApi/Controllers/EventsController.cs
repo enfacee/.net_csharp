@@ -10,6 +10,8 @@ namespace EventApi.Presentation.Controllers;
 [Route("[controller]")]
 public class EventsController(IEventService eventService, IBookingService bookingService) : ControllerBase
 {
+    private const int TemporaryUserId = 1;
+
     [HttpGet]
     public async Task<ActionResult<PaginatedResult<EventResponse>>> GetAll(
         [FromQuery] string? title,
@@ -52,7 +54,7 @@ public class EventsController(IEventService eventService, IBookingService bookin
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<BookingResponse>> CreateBooking(int id, CancellationToken cancellationToken)
     {
-        var booking = await bookingService.CreateBookingAsync(id, cancellationToken);
+        var booking = await bookingService.CreateBookingAsync(id, TemporaryUserId, cancellationToken);
         var response = booking.ToResponse();
 
         return AcceptedAtRoute(
