@@ -14,7 +14,7 @@ builder.Services.AddProblemDetails(options =>
 });
 builder.Services.AddSwaggerGen();
 builder.Services.AddApplicationServices();
-builder.Services.AddInfrastructureServices(builder.Configuration.GetConnectionString("DefaultConnection"));
+builder.Services.AddInfrastructureServices(builder.Configuration);
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {

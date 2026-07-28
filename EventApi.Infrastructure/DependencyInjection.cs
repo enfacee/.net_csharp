@@ -1,8 +1,11 @@
 using EventApi.Application.Abstractions;
+using EventApi.Application.Security;
 using EventApi.Infrastructure.BackgroundServices;
 using EventApi.Infrastructure.Persistence;
 using EventApi.Infrastructure.Persistence.Repositories;
+using EventApi.Infrastructure.Security;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace EventApi.Infrastructure;
@@ -11,8 +14,10 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructureServices(
         this IServiceCollection services,
-        string? connectionString)
+        IConfiguration configuration)
     {
+        var connectionString = configuration.GetConnectionString("DefaultConnection");
+
         if (string.IsNullOrWhiteSpace(connectionString))
             throw new InvalidOperationException("DefaultConnection connection string is not configured.");
 
@@ -21,6 +26,18 @@ public static class DependencyInjection
 
         services.AddScoped<IEventRepository, EventRepository>();
         services.AddScoped<IBookingRepository, BookingRepository>();
+        services.Configure<JwtOptions>(options =>
+        {
+            var section = configuration.GetSection(JwtOptions.SectionName);
+            options.Secret = section[nameof(JwtOptions.Secret)] ?? string.Empty;
+            options.Issuer = section[nameof(JwtOptions.Issuer)] ?? string.Empty;
+            options.Audience = section[nameof(JwtOptions.Audience)] ?? string.Empty;
+
+            if (int.TryParse(section[nameof(JwtOptions.LifetimeMinutes)], out var lifetimeMinutes))
+                options.LifetimeMinutes = lifetimeMinutes;
+        });
+        services.AddSingleton<Sha256PasswordHasher>();
+        services.AddScoped<JwtTokenGenerator>();
         services.AddHostedService<BookingProcessingBackgroundService>();
 
         return services;
