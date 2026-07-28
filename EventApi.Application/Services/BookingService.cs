@@ -12,9 +12,10 @@ public class BookingService(
 {
     private static readonly SemaphoreSlim BookingSemaphore = new(1, 1);
 
-    public async Task<Booking> CreateBookingAsync(int eventId, CancellationToken cancellationToken = default)
+    public async Task<Booking> CreateBookingAsync(int eventId, int userId, CancellationToken cancellationToken = default)
     {
         ValidateEventId(eventId);
+        ValidateUserId(userId);
 
         await BookingSemaphore.WaitAsync(cancellationToken);
         try
@@ -25,7 +26,7 @@ public class BookingService(
             if (!@event.TryReserveSeats())
                 throw new NoAvailableSeatsException("No available seats for this event");
 
-            var booking = new Booking(eventId, timeProvider.GetUtcNow().UtcDateTime);
+            var booking = new Booking(eventId, userId, timeProvider.GetUtcNow().UtcDateTime);
 
             await bookingRepository.AddAsync(booking, cancellationToken);
             await bookingRepository.SaveChangesAsync(cancellationToken);
@@ -98,6 +99,12 @@ public class BookingService(
     {
         if (eventId <= 0)
             throw new ValidationException("EventId must be greater than 0.");
+    }
+
+    private static void ValidateUserId(int userId)
+    {
+        if (userId <= 0)
+            throw new ValidationException("UserId must be greater than 0.");
     }
 }
 
