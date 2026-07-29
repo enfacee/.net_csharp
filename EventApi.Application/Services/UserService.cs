@@ -2,13 +2,13 @@ using System.ComponentModel.DataAnnotations;
 using EventApi.Application.Abstractions;
 using EventApi.Domain.Entities;
 
-namespace EventApi.Infrastructure.Security;
+namespace EventApi.Application.Services;
 
 public sealed class UserService(
     IUserRepository userRepository,
     IUnitOfWork unitOfWork,
-    Sha256PasswordHasher passwordHasher,
-    JwtTokenGenerator jwtTokenGenerator) : IUserService
+    IPasswordHasher passwordHasher,
+    IJwtTokenGenerator jwtTokenGenerator) : IUserService
 {
     public async Task RegisterAsync(
         string login,

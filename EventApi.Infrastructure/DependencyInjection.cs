@@ -1,5 +1,4 @@
 using EventApi.Application.Abstractions;
-using EventApi.Application.Security;
 using EventApi.Infrastructure.BackgroundServices;
 using EventApi.Infrastructure.Persistence;
 using EventApi.Infrastructure.Persistence.Repositories;
@@ -28,19 +27,8 @@ public static class DependencyInjection
         services.AddScoped<IBookingRepository, BookingRepository>();
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<IUnitOfWork, EfUnitOfWork>();
-        services.Configure<JwtOptions>(options =>
-        {
-            var section = configuration.GetSection(JwtOptions.SectionName);
-            options.Secret = section[nameof(JwtOptions.Secret)] ?? string.Empty;
-            options.Issuer = section[nameof(JwtOptions.Issuer)] ?? string.Empty;
-            options.Audience = section[nameof(JwtOptions.Audience)] ?? string.Empty;
-
-            if (int.TryParse(section[nameof(JwtOptions.LifetimeMinutes)], out var lifetimeMinutes))
-                options.LifetimeMinutes = lifetimeMinutes;
-        });
-        services.AddSingleton<Sha256PasswordHasher>();
-        services.AddScoped<JwtTokenGenerator>();
-        services.AddScoped<IUserService, UserService>();
+        services.AddSingleton<IPasswordHasher, Sha256PasswordHasher>();
+        services.AddScoped<IJwtTokenGenerator, JwtTokenGenerator>();
         services.AddHostedService<BookingProcessingBackgroundService>();
 
         return services;

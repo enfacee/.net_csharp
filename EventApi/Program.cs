@@ -5,6 +5,7 @@ using EventApi.Application.Security;
 using EventApi.Infrastructure;
 using EventApi.Presentation.Middleware;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
 using Microsoft.OpenApi;
 
@@ -37,9 +38,9 @@ builder.Services.AddSwaggerGen(options =>
         }
     });
 });
-builder.Services.AddApplicationServices();
+builder.Services.AddApplicationServices(builder.Configuration);
 builder.Services.AddInfrastructureServices(builder.Configuration);
-builder.Services.AddJwtAuthentication(builder.Configuration);
+builder.Services.AddJwtAuthentication();
 builder.Services.AddAuthorization();
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
@@ -67,16 +68,17 @@ app.Run();
 
 internal static partial class ServiceCollectionExtensions
 {
-    public static IServiceCollection AddJwtAuthentication(
-        this IServiceCollection services,
-        IConfiguration configuration)
+    public static IServiceCollection AddJwtAuthentication(this IServiceCollection services)
     {
-        var jwtOptions = GetJwtOptions(configuration);
-
         services
             .AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-            .AddJwtBearer(options =>
+            .AddJwtBearer();
+
+        services.AddOptions<JwtBearerOptions>(JwtBearerDefaults.AuthenticationScheme)
+            .Configure<IOptions<JwtOptions>>((options, jwtOptionsAccessor) =>
             {
+                var jwtOptions = jwtOptionsAccessor.Value;
+
                 options.MapInboundClaims = false;
                 options.TokenValidationParameters = new TokenValidationParameters
                 {
@@ -91,38 +93,5 @@ internal static partial class ServiceCollectionExtensions
             });
 
         return services;
-    }
-
-    private static JwtOptions GetJwtOptions(IConfiguration configuration)
-    {
-        var section = configuration.GetSection(JwtOptions.SectionName);
-        var jwtOptions = new JwtOptions
-        {
-            Secret = section[nameof(JwtOptions.Secret)] ?? string.Empty,
-            Issuer = section[nameof(JwtOptions.Issuer)] ?? string.Empty,
-            Audience = section[nameof(JwtOptions.Audience)] ?? string.Empty
-        };
-
-        if (int.TryParse(section[nameof(JwtOptions.LifetimeMinutes)], out var lifetimeMinutes))
-            jwtOptions.LifetimeMinutes = lifetimeMinutes;
-
-        ValidateJwtOptions(jwtOptions);
-
-        return jwtOptions;
-    }
-
-    private static void ValidateJwtOptions(JwtOptions options)
-    {
-        if (string.IsNullOrWhiteSpace(options.Secret))
-            throw new InvalidOperationException("Jwt:Secret is not configured.");
-
-        if (Encoding.UTF8.GetByteCount(options.Secret) < 32)
-            throw new InvalidOperationException("Jwt:Secret must be at least 32 bytes long.");
-
-        if (string.IsNullOrWhiteSpace(options.Issuer))
-            throw new InvalidOperationException("Jwt:Issuer is not configured.");
-
-        if (string.IsNullOrWhiteSpace(options.Audience))
-            throw new InvalidOperationException("Jwt:Audience is not configured.");
     }
 }

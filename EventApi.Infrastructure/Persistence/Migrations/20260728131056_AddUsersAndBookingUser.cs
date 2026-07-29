@@ -11,13 +11,6 @@ namespace EventApi.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Up(MigrationBuilder migrationBuilder)
         {
-            migrationBuilder.AddColumn<int>(
-                name: "UserId",
-                table: "Bookings",
-                type: "integer",
-                nullable: false,
-                defaultValue: 0);
-
             migrationBuilder.CreateTable(
                 name: "Users",
                 columns: table => new
@@ -32,6 +25,20 @@ namespace EventApi.Infrastructure.Persistence.Migrations
                 {
                     table.PrimaryKey("PK_Users", x => x.Id);
                 });
+
+            migrationBuilder.InsertData(
+                table: "Users",
+                columns: ["Id", "Login", "PasswordHash", "Role"],
+                values: [1, "__legacy_user__", "0000000000000000000000000000000000000000000000000000000000000000", "User"]);
+
+            migrationBuilder.Sql("""ALTER TABLE "Users" ALTER COLUMN "Id" RESTART WITH 2;""");
+
+            migrationBuilder.AddColumn<int>(
+                name: "UserId",
+                table: "Bookings",
+                type: "integer",
+                nullable: false,
+                defaultValue: 1);
 
             migrationBuilder.CreateIndex(
                 name: "IX_Bookings_UserId",

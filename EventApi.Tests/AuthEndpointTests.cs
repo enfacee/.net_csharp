@@ -161,7 +161,7 @@ public class AuthEndpointTests(EventApiWebApplicationFactory factory) : IClassFi
 
     private static EventRequest CreateEventRequest()
     {
-        var startAt = new DateTime(2027, 05, 22, 10, 0, 0, DateTimeKind.Utc);
+        var startAt = DateTime.UtcNow.AddDays(30);
 
         return new EventRequest
         {

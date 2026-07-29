@@ -1,9 +1,10 @@
 using System.Security.Cryptography;
 using System.Text;
+using EventApi.Application.Abstractions;
 
 namespace EventApi.Infrastructure.Security;
 
-public sealed class Sha256PasswordHasher
+public sealed class Sha256PasswordHasher : IPasswordHasher
 {
     public string Hash(string password)
     {

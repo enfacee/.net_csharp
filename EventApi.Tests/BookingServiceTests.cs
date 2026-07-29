@@ -293,7 +293,7 @@ public class BookingServiceTests : IDisposable
 
     private static async Task<Event> AddEventAsync(AppDbContext context, int totalSeats = 10)
     {
-        var startAt = new DateTime(2027, 05, 22, 10, 0, 0, DateTimeKind.Utc);
+        var startAt = DateTime.UtcNow.AddDays(30);
         var @event = new Event("Booking test event", null, startAt, startAt.AddHours(1), totalSeats);
         context.Events.Add(@event);
         await context.SaveChangesAsync();
