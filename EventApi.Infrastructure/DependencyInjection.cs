@@ -50,7 +50,9 @@ public static class DependencyInjection
     {
         using var scope = serviceProvider.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-        db.Database.Migrate();
+
+        if (db.Database.IsRelational())
+            db.Database.Migrate();
     }
 }
 

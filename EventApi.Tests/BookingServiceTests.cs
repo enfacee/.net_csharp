@@ -13,6 +13,9 @@ namespace EventApi.Tests;
 
 public class BookingServiceTests : IDisposable
 {
+    private const int UserId = 1;
+    private const int OtherUserId = 2;
+
     private readonly ServiceProvider _serviceProvider;
 
     public BookingServiceTests()
@@ -24,6 +27,7 @@ public class BookingServiceTests : IDisposable
         services.AddSingleton(TimeProvider.System);
         services.AddScoped<IEventRepository, EventRepository>();
         services.AddScoped<IBookingRepository, BookingRepository>();
+        services.AddScoped<IUnitOfWork, EfUnitOfWork>();
         services.AddScoped<IBookingService, BookingService>();
 
         _serviceProvider = services.BuildServiceProvider();
@@ -38,11 +42,12 @@ public class BookingServiceTests : IDisposable
         var @event = await AddEventAsync(context);
         var beforeCreate = DateTime.UtcNow;
 
-        var booking = await service.CreateBookingAsync(@event.Id);
+        var booking = await service.CreateBookingAsync(@event.Id, UserId);
 
         var afterCreate = DateTime.UtcNow;
         booking.Id.Should().BeGreaterThan(0);
         booking.EventId.Should().Be(@event.Id);
+        booking.UserId.Should().Be(UserId);
         booking.Status.Should().Be(BookingStatus.Pending);
         booking.CreatedAt.Should().BeOnOrAfter(beforeCreate);
         booking.CreatedAt.Should().BeOnOrBefore(afterCreate);
@@ -56,7 +61,7 @@ public class BookingServiceTests : IDisposable
         using var scope = _serviceProvider.CreateScope();
         var service = scope.ServiceProvider.GetRequiredService<IBookingService>();
 
-        Func<Task> act = () => service.CreateBookingAsync(999999);
+        Func<Task> act = () => service.CreateBookingAsync(999999, UserId);
 
         await act.Should().ThrowAsync<NotFoundException>()
             .WithMessage("*Event not found*");
@@ -69,9 +74,9 @@ public class BookingServiceTests : IDisposable
         var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var service = scope.ServiceProvider.GetRequiredService<IBookingService>();
         var @event = await AddEventAsync(context, totalSeats: 1);
-        await service.CreateBookingAsync(@event.Id);
+        await service.CreateBookingAsync(@event.Id, UserId);
 
-        Func<Task> act = () => service.CreateBookingAsync(@event.Id);
+        Func<Task> act = () => service.CreateBookingAsync(@event.Id, UserId);
 
         await act.Should().ThrowAsync<NoAvailableSeatsException>()
             .WithMessage("No available seats for this event");
@@ -85,8 +90,8 @@ public class BookingServiceTests : IDisposable
         var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var service = scope.ServiceProvider.GetRequiredService<IBookingService>();
         var @event = await AddEventAsync(context);
-        var pendingBooking = await service.CreateBookingAsync(@event.Id);
-        var confirmedBooking = await service.CreateBookingAsync(@event.Id);
+        var pendingBooking = await service.CreateBookingAsync(@event.Id, UserId);
+        var confirmedBooking = await service.CreateBookingAsync(@event.Id, UserId);
         await service.UpdateBookingStatusAsync(confirmedBooking.Id, BookingStatus.Confirmed);
 
         var result = await service.GetPendingBookingsAsync();
@@ -102,7 +107,7 @@ public class BookingServiceTests : IDisposable
         var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
         var service = scope.ServiceProvider.GetRequiredService<IBookingService>();
         var @event = await AddEventAsync(context);
-        var booking = await service.CreateBookingAsync(@event.Id);
+        var booking = await service.CreateBookingAsync(@event.Id, UserId);
         var availableSeatsBeforeReject = @event.AvailableSeats;
 
         var result = await service.UpdateBookingStatusAsync(booking.Id, BookingStatus.Rejected);
@@ -133,7 +138,7 @@ public class BookingServiceTests : IDisposable
 
                 try
                 {
-                    await service.CreateBookingAsync(eventId);
+                    await service.CreateBookingAsync(eventId, UserId);
                     return "success";
                 }
                 catch (NoAvailableSeatsException)
@@ -174,10 +179,98 @@ public class BookingServiceTests : IDisposable
         using var scope = _serviceProvider.CreateScope();
         var service = scope.ServiceProvider.GetRequiredService<IBookingService>();
 
-        Func<Task> act = () => service.CreateBookingAsync(0);
+        Func<Task> act = () => service.CreateBookingAsync(0, UserId);
 
         await act.Should().ThrowAsync<ValidationException>()
             .WithMessage("*EventId must be greater than 0*");
+    }
+
+    [Fact]
+    public async Task CreateBookingAsync_ShouldThrowEventAlreadyStartedException_WhenEventAlreadyStarted()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var service = scope.ServiceProvider.GetRequiredService<IBookingService>();
+        var startedAt = DateTime.UtcNow.AddHours(-2);
+        var @event = new Event("Started event", null, startedAt, startedAt.AddHours(1), totalSeats: 10);
+        context.Events.Add(@event);
+        await context.SaveChangesAsync();
+
+        Func<Task> act = () => service.CreateBookingAsync(@event.Id, UserId);
+
+        await act.Should().ThrowAsync<EventAlreadyStartedException>()
+            .WithMessage("*already started*");
+    }
+
+    [Fact]
+    public async Task CreateBookingAsync_ShouldThrowActiveBookingLimitExceededException_WhenUserReachedLimit()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var service = scope.ServiceProvider.GetRequiredService<IBookingService>();
+        var @event = await AddEventAsync(context, totalSeats: 11);
+
+        for (var i = 0; i < 10; i++)
+        {
+            await service.CreateBookingAsync(@event.Id, UserId);
+        }
+
+        Func<Task> act = () => service.CreateBookingAsync(@event.Id, UserId);
+
+        await act.Should().ThrowAsync<ActiveBookingLimitExceededException>()
+            .WithMessage("*10*");
+        @event.AvailableSeats.Should().Be(1);
+    }
+
+    [Fact]
+    public async Task CreateBookingAsync_ShouldApplyActiveBookingLimitPerUser()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var service = scope.ServiceProvider.GetRequiredService<IBookingService>();
+        var @event = await AddEventAsync(context, totalSeats: 11);
+
+        for (var i = 0; i < 10; i++)
+        {
+            await service.CreateBookingAsync(@event.Id, UserId);
+        }
+
+        var booking = await service.CreateBookingAsync(@event.Id, OtherUserId);
+
+        booking.UserId.Should().Be(OtherUserId);
+    }
+
+    [Fact]
+    public async Task CancelBookingAsync_ShouldThrowForbiddenOperationException_WhenUserCancelsAnotherUsersBooking()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var service = scope.ServiceProvider.GetRequiredService<IBookingService>();
+        var @event = await AddEventAsync(context);
+        var booking = await service.CreateBookingAsync(@event.Id, UserId);
+
+        Func<Task> act = () => service.CancelBookingAsync(booking.Id, OtherUserId, UserRole.User);
+
+        await act.Should().ThrowAsync<ForbiddenOperationException>()
+            .WithMessage("*permission*");
+    }
+
+    [Fact]
+    public async Task CancelBookingAsync_ShouldCancelOwnBookingAndReleaseSeat()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var context = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+        var service = scope.ServiceProvider.GetRequiredService<IBookingService>();
+        var @event = await AddEventAsync(context);
+        var booking = await service.CreateBookingAsync(@event.Id, UserId);
+        var availableSeatsBeforeCancel = @event.AvailableSeats;
+
+        var result = await service.CancelBookingAsync(booking.Id, UserId, UserRole.User);
+
+        result.Should().BeTrue();
+        booking.Status.Should().Be(BookingStatus.Cancelled);
+        booking.ProcessedAt.Should().NotBeNull();
+        @event.AvailableSeats.Should().Be(availableSeatsBeforeCancel + 1);
     }
 
     [Fact]
@@ -185,7 +278,7 @@ public class BookingServiceTests : IDisposable
     {
         var createdAt = new DateTime(2026, 05, 22, 10, 0, 0, DateTimeKind.Utc);
         var processedAt = createdAt.AddMinutes(5);
-        var booking = new Booking(eventId: 1, createdAt);
+        var booking = new Booking(eventId: 1, userId: UserId, createdAt: createdAt);
 
         booking.Confirm(processedAt);
 
@@ -200,7 +293,7 @@ public class BookingServiceTests : IDisposable
 
     private static async Task<Event> AddEventAsync(AppDbContext context, int totalSeats = 10)
     {
-        var startAt = new DateTime(2026, 05, 22, 10, 0, 0, DateTimeKind.Utc);
+        var startAt = new DateTime(2027, 05, 22, 10, 0, 0, DateTimeKind.Utc);
         var @event = new Event("Booking test event", null, startAt, startAt.AddHours(1), totalSeats);
         context.Events.Add(@event);
         await context.SaveChangesAsync();

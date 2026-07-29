@@ -15,12 +15,14 @@ namespace EventApi.Tests;
 
 public class BookingProcessingBackgroundServiceTests
 {
+    private const int UserId = 1;
+
     [Fact]
     public async Task ProcessPendingBookingsAsync_ShouldRejectBooking_WhenEventWasDeleted()
     {
         var databaseName = Guid.NewGuid().ToString();
         await using var seedContext = CreateContext(databaseName);
-        var booking = new Booking(eventId: 999999, CreatedAt);
+        var booking = new Booking(eventId: 999999, userId: UserId, createdAt: CreatedAt);
         seedContext.Bookings.Add(booking);
         await seedContext.SaveChangesAsync();
         var service = CreateService(databaseName);
@@ -45,7 +47,7 @@ public class BookingProcessingBackgroundServiceTests
             var @event = CreateTestEvent(totalSeats: 1);
             seedContext.Events.Add(@event);
             await seedContext.SaveChangesAsync();
-            seedContext.Bookings.Add(new Booking(@event.Id, CreatedAt));
+            seedContext.Bookings.Add(new Booking(@event.Id, UserId, CreatedAt));
         }
 
         await seedContext.SaveChangesAsync();
@@ -67,6 +69,7 @@ public class BookingProcessingBackgroundServiceTests
         services.AddDbContext<AppDbContext>(options => options.UseInMemoryDatabase(databaseName));
         services.AddScoped<IEventRepository, EventRepository>();
         services.AddScoped<IBookingRepository, BookingRepository>();
+        services.AddScoped<IUnitOfWork, EfUnitOfWork>();
         services.AddApplicationServices();
         var provider = services.BuildServiceProvider();
 
