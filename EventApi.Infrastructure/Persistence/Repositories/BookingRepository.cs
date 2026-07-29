@@ -23,6 +23,16 @@ public class BookingRepository(AppDbContext context) : IBookingRepository
         return await context.Bookings.FindAsync([id], cancellationToken);
     }
 
+    public async Task<int> CountActiveByUserIdAsync(int userId, CancellationToken cancellationToken = default)
+    {
+        return await context.Bookings
+            .CountAsync(
+                booking =>
+                    booking.UserId == userId &&
+                    (booking.Status == BookingStatus.Pending || booking.Status == BookingStatus.Confirmed),
+                cancellationToken);
+    }
+
     public async Task<int[]> GetPendingBookingIdsAsync(CancellationToken cancellationToken = default)
     {
         return await context.Bookings
@@ -42,8 +52,4 @@ public class BookingRepository(AppDbContext context) : IBookingRepository
             .ToArrayAsync(cancellationToken);
     }
 
-    public async Task SaveChangesAsync(CancellationToken cancellationToken = default)
-    {
-        await context.SaveChangesAsync(cancellationToken);
-    }
 }

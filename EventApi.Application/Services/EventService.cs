@@ -5,7 +5,9 @@ using EventApi.Domain.Entities;
 
 namespace EventApi.Application.Services;
 
-public class EventService(IEventRepository eventRepository) : IEventService
+public class EventService(
+    IEventRepository eventRepository,
+    IUnitOfWork unitOfWork) : IEventService
 {
     public async Task<Event> CreateEventAsync(
         string title,
@@ -24,7 +26,7 @@ public class EventService(IEventRepository eventRepository) : IEventService
     public async Task AddAsync(Event @event, CancellationToken cancellationToken = default)
     {
         await eventRepository.AddAsync(@event, cancellationToken);
-        await eventRepository.SaveChangesAsync(cancellationToken);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
     }
 
     public async Task<PaginatedResult<Event>> GetAllAsync(
@@ -54,7 +56,7 @@ public class EventService(IEventRepository eventRepository) : IEventService
         if (!await eventRepository.RemoveAsync(id, cancellationToken))
             return false;
 
-        await eventRepository.SaveChangesAsync(cancellationToken);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
         return true;
     }
 
@@ -74,7 +76,7 @@ public class EventService(IEventRepository eventRepository) : IEventService
             request.EndAt,
             request.TotalSeats!.Value);
 
-        await eventRepository.SaveChangesAsync(cancellationToken);
+        await unitOfWork.SaveChangesAsync(cancellationToken);
         return true;
     }
 }

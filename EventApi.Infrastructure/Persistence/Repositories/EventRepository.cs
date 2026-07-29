@@ -78,8 +78,4 @@ public class EventRepository(AppDbContext context) : IEventRepository
         return true;
     }
 
-    public async Task SaveChangesAsync(CancellationToken cancellationToken = default)
-    {
-        await context.SaveChangesAsync(cancellationToken);
-    }
 }

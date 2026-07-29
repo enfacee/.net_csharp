@@ -1,4 +1,5 @@
 using EventApi.Domain.Entities;
+using EventApi.Infrastructure.Persistence;
 using EventApi.Infrastructure.Persistence.Repositories;
 
 namespace EventApi.IntegrationTests;
@@ -17,14 +18,15 @@ public sealed class EventRepositoryTests(PostgreSqlContainerFixture fixture) : I
     }
 
     [Fact]
-    public async Task AddAsync_SaveChangesAsync_GetByIdAsync_AndExistsAsync_ShouldPersistEventWithDatabaseGeneratedId()
+    public async Task AddAsync_UnitOfWorkSaveChangesAsync_GetByIdAsync_AndExistsAsync_ShouldPersistEventWithDatabaseGeneratedId()
     {
         await using var context = fixture.CreateContext();
         var repository = new EventRepository(context);
+        var unitOfWork = new EfUnitOfWork(context);
         var @event = CreateEvent("Architecture review");
 
         await repository.AddAsync(@event);
-        await repository.SaveChangesAsync();
+        await unitOfWork.SaveChangesAsync();
 
         Assert.True(@event.Id > 0);
         Assert.True(await repository.ExistsAsync(@event.Id));
@@ -148,12 +150,13 @@ public sealed class EventRepositoryTests(PostgreSqlContainerFixture fixture) : I
     }
 
     [Fact]
-    public async Task SaveChangesAsync_ShouldPersistTrackedChanges()
+    public async Task UnitOfWorkSaveChangesAsync_ShouldPersistTrackedChanges()
     {
         var @event = await SeedEventAsync(CreateEvent("Original"));
 
         await using var context = fixture.CreateContext();
         var repository = new EventRepository(context);
+        var unitOfWork = new EfUnitOfWork(context);
         var persistedEvent = await repository.GetByIdAsync(@event.Id);
         Assert.NotNull(persistedEvent);
 
@@ -163,7 +166,7 @@ public sealed class EventRepositoryTests(PostgreSqlContainerFixture fixture) : I
             persistedEvent.StartAt,
             persistedEvent.EndAt,
             persistedEvent.TotalSeats);
-        await repository.SaveChangesAsync();
+        await unitOfWork.SaveChangesAsync();
 
         await using var assertContext = fixture.CreateContext();
         var result = await new EventRepository(assertContext).GetByIdAsync(@event.Id);
@@ -177,9 +180,10 @@ public sealed class EventRepositoryTests(PostgreSqlContainerFixture fixture) : I
 
         await using var context = fixture.CreateContext();
         var repository = new EventRepository(context);
+        var unitOfWork = new EfUnitOfWork(context);
 
         Assert.True(await repository.RemoveAsync(@event.Id));
-        await repository.SaveChangesAsync();
+        await unitOfWork.SaveChangesAsync();
         Assert.False(await repository.RemoveAsync(@event.Id));
         Assert.Null(await repository.GetByIdAsync(@event.Id));
     }
@@ -194,13 +198,14 @@ public sealed class EventRepositoryTests(PostgreSqlContainerFixture fixture) : I
     {
         await using var context = fixture.CreateContext();
         var repository = new EventRepository(context);
+        var unitOfWork = new EfUnitOfWork(context);
 
         foreach (var @event in events)
         {
             await repository.AddAsync(@event);
         }
 
-        await repository.SaveChangesAsync();
+        await unitOfWork.SaveChangesAsync();
     }
 
     private static Event CreateEvent(

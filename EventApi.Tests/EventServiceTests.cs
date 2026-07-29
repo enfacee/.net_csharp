@@ -21,6 +21,7 @@ public class EventServiceTests : IDisposable
         services.AddDbContext<AppDbContext>(options =>
             options.UseInMemoryDatabase(dbName));
         services.AddScoped<IEventRepository, EventRepository>();
+        services.AddScoped<IUnitOfWork, EfUnitOfWork>();
         services.AddScoped<IEventService, EventService>();
 
         _serviceProvider = services.BuildServiceProvider();

@@ -56,11 +56,15 @@ public sealed class GlobalExceptionHandlingMiddleware(
     private static int GetStatusCode(Exception exception) => exception switch
     {
         NoAvailableSeatsException => StatusCodes.Status409Conflict,
+        ActiveBookingLimitExceededException => StatusCodes.Status409Conflict,
+        EventAlreadyStartedException => StatusCodes.Status400BadRequest,
+        ForbiddenOperationException => StatusCodes.Status403Forbidden,
         ValidationException => StatusCodes.Status400BadRequest,
         ArgumentException => StatusCodes.Status400BadRequest,
         InvalidOperationException => StatusCodes.Status400BadRequest,
         NotFoundException => StatusCodes.Status404NotFound,
         KeyNotFoundException => StatusCodes.Status404NotFound,
+        UnauthorizedAccessException => StatusCodes.Status401Unauthorized,
         _ => StatusCodes.Status500InternalServerError
     };
 
