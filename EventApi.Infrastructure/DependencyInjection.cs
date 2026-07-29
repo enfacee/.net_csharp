@@ -26,6 +26,8 @@ public static class DependencyInjection
 
         services.AddScoped<IEventRepository, EventRepository>();
         services.AddScoped<IBookingRepository, BookingRepository>();
+        services.AddScoped<IUserRepository, UserRepository>();
+        services.AddScoped<IUnitOfWork, EfUnitOfWork>();
         services.Configure<JwtOptions>(options =>
         {
             var section = configuration.GetSection(JwtOptions.SectionName);
@@ -38,6 +40,7 @@ public static class DependencyInjection
         });
         services.AddSingleton<Sha256PasswordHasher>();
         services.AddScoped<JwtTokenGenerator>();
+        services.AddScoped<IUserService, UserService>();
         services.AddHostedService<BookingProcessingBackgroundService>();
 
         return services;

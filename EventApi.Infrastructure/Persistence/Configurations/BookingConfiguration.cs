@@ -17,6 +17,9 @@ internal sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
         builder.Property(b => b.EventId)
             .IsRequired();
 
+        builder.Property(b => b.UserId)
+            .IsRequired();
+
         builder.Property(b => b.Status)
             .HasConversion<string>()
             .HasMaxLength(32)
@@ -30,6 +33,10 @@ internal sealed class BookingConfiguration : IEntityTypeConfiguration<Booking>
         builder.HasOne(b => b.Event)
             .WithMany(e => e.Bookings)
             .HasForeignKey(b => b.EventId);
+
+        builder.HasOne(b => b.User)
+            .WithMany(u => u.Bookings)
+            .HasForeignKey(b => b.UserId);
     }
 }
 
