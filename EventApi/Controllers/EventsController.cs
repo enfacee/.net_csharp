@@ -1,7 +1,9 @@
+using System.IdentityModel.Tokens.Jwt;
 using EventApi.Application.Abstractions;
 using EventApi.Application.Common;
 using EventApi.Application.DTO;
 using EventApi.Application.Mapping;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace EventApi.Presentation.Controllers;
@@ -10,8 +12,6 @@ namespace EventApi.Presentation.Controllers;
 [Route("[controller]")]
 public class EventsController(IEventService eventService, IBookingService bookingService) : ControllerBase
 {
-    private const int TemporaryUserId = 1;
-
     [HttpGet]
     public async Task<ActionResult<PaginatedResult<EventResponse>>> GetAll(
         [FromQuery] string? title,
@@ -30,6 +30,7 @@ public class EventsController(IEventService eventService, IBookingService bookin
             PageSize = result.PageSize
         });
     }
+
     [HttpGet("{id}")]
     public async Task<ActionResult<EventResponse>> GetById(int id)
     {
@@ -37,7 +38,9 @@ public class EventsController(IEventService eventService, IBookingService bookin
             return Ok(@event.ToResponse());
         return NotFound();
     }
+
     [HttpPost]
+    [Authorize(Roles = "Admin")]
     public async Task<ActionResult<EventResponse>> Create([FromBody] EventRequest request)
     {
         var @event = await eventService.CreateEventAsync(
@@ -51,10 +54,14 @@ public class EventsController(IEventService eventService, IBookingService bookin
     }
 
     [HttpPost("{id}/book")]
+    [Authorize]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<BookingResponse>> CreateBooking(int id, CancellationToken cancellationToken)
     {
-        var booking = await bookingService.CreateBookingAsync(id, TemporaryUserId, cancellationToken);
+        var booking = await bookingService.CreateBookingAsync(id, GetCurrentUserId(), cancellationToken);
         var response = booking.ToResponse();
 
         return AcceptedAtRoute(
@@ -64,6 +71,7 @@ public class EventsController(IEventService eventService, IBookingService bookin
     }
 
     [HttpPut("{id}")]
+    [Authorize(Roles = "Admin")]
     public async Task<ActionResult> Update(int id, [FromBody] EventRequest request)
     {
         if (!await eventService.UpdateEventAsync(id, request))
@@ -73,11 +81,21 @@ public class EventsController(IEventService eventService, IBookingService bookin
     }
 
     [HttpDelete("{id}")]
+    [Authorize(Roles = "Admin")]
     public async Task<ActionResult> Delete(int id)
     {
         if (!await eventService.RemoveAsync(id))
             return NotFound();
         return Ok();
+    }
+
+    private int GetCurrentUserId()
+    {
+        var userId = User.FindFirst(JwtRegisteredClaimNames.Sub)?.Value;
+        if (!int.TryParse(userId, out var parsedUserId))
+            throw new UnauthorizedAccessException("User id claim is missing or invalid.");
+
+        return parsedUserId;
     }
 }
 
