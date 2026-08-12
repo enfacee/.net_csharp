@@ -1,5 +1,6 @@
 using System.Text;
 using EventApi.Bookings.Application.Abstractions;
+using EventApi.Bookings.Application.Options;
 using EventApi.Bookings.Application.Security;
 using EventApi.Bookings.Application.Services;
 using Microsoft.Extensions.Configuration;
@@ -24,6 +25,10 @@ public static class DependencyInjection
             .Validate(options => !string.IsNullOrWhiteSpace(options.Issuer), "Jwt:Issuer is not configured.")
             .Validate(options => !string.IsNullOrWhiteSpace(options.Audience), "Jwt:Audience is not configured.")
             .Validate(options => options.LifetimeMinutes > 0, "Jwt:LifetimeMinutes must be greater than 0.")
+            .ValidateOnStart();
+        services.AddOptions<KafkaOptions>()
+            .Bind(configuration.GetSection(KafkaOptions.SectionName))
+            .Validate(options => !string.IsNullOrWhiteSpace(options.BootstrapServers), "Kafka:BootstrapServers is not configured.")
             .ValidateOnStart();
 
         return services;

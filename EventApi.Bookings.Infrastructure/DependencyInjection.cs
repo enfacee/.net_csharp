@@ -1,5 +1,6 @@
 using EventApi.Bookings.Application.Abstractions;
 using EventApi.Bookings.Infrastructure.BackgroundServices;
+using EventApi.Bookings.Infrastructure.Messaging;
 using EventApi.Bookings.Infrastructure.Persistence;
 using EventApi.Bookings.Infrastructure.Persistence.Repositories;
 using Microsoft.EntityFrameworkCore;
@@ -23,6 +24,7 @@ public static class DependencyInjection
             options.UseNpgsql(connectionString));
 
         services.AddScoped<IBookingRepository, BookingRepository>();
+        services.AddSingleton<IBookingEventPublisher, KafkaBookingEventPublisher>();
         services.AddHostedService<BookingProcessingBackgroundService>();
 
         return services;

@@ -2,11 +2,13 @@ using System.ComponentModel.DataAnnotations;
 using EventApi.Bookings.Application.Abstractions;
 using EventApi.Bookings.Domain.Entities;
 using EventApi.Bookings.Domain.Exceptions;
+using EventApi.Shared.Contracts;
 
 namespace EventApi.Bookings.Application.Services;
 
 public class BookingService(
     IBookingRepository bookingRepository,
+    IBookingEventPublisher bookingEventPublisher,
     TimeProvider timeProvider) : IBookingService
 {
     private const int ActiveBookingLimit = 10;
@@ -28,6 +30,14 @@ public class BookingService(
             var booking = new Booking(eventId, userId, timeProvider.GetUtcNow().UtcDateTime);
 
             await bookingRepository.AddAsync(booking, cancellationToken);
+            await bookingEventPublisher.PublishBookingCreatedAsync(
+                new BookingCreated(
+                    booking.Id,
+                    booking.EventId,
+                    booking.UserId,
+                    Seats: 1,
+                    booking.CreatedAt),
+                cancellationToken);
 
             return booking;
         }
