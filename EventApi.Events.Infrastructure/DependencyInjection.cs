@@ -1,4 +1,5 @@
 using EventApi.Events.Application.Abstractions;
+using EventApi.Events.Infrastructure.Messaging;
 using EventApi.Events.Infrastructure.Persistence;
 using EventApi.Events.Infrastructure.Persistence.Repositories;
 using Microsoft.EntityFrameworkCore;
@@ -22,6 +23,9 @@ public static class DependencyInjection
             options.UseNpgsql(connectionString));
 
         services.AddScoped<IEventRepository, EventRepository>();
+        services.AddSingleton<IEventSeatReservationPublisher, KafkaEventSeatReservationPublisher>();
+        services.AddHostedService<KafkaTopicInitializerHostedService>();
+        services.AddHostedService<BookingCreatedConsumerBackgroundService>();
 
         return services;
     }
