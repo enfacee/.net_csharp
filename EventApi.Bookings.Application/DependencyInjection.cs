@@ -29,6 +29,7 @@ public static class DependencyInjection
         services.AddOptions<KafkaOptions>()
             .Bind(configuration.GetSection(KafkaOptions.SectionName))
             .Validate(options => !string.IsNullOrWhiteSpace(options.BootstrapServers), "Kafka:BootstrapServers is not configured.")
+            .Validate(options => !string.IsNullOrWhiteSpace(options.ConsumerGroup), "Kafka:ConsumerGroup is not configured.")
             .ValidateOnStart();
 
         return services;

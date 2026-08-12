@@ -41,6 +41,8 @@ public class EventsController(IEventService eventService) : ControllerBase
 
     [HttpPost]
     [Authorize(Roles = "Admin")]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     public async Task<ActionResult<EventResponse>> Create([FromBody] EventRequest request)
     {
         var @event = await eventService.CreateEventAsync(
@@ -56,6 +58,8 @@ public class EventsController(IEventService eventService) : ControllerBase
 
     [HttpPut("{id}")]
     [Authorize(Roles = "Admin")]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     public async Task<ActionResult> Update(int id, [FromBody] EventRequest request)
     {
         if (!await eventService.UpdateEventAsync(id, request))
@@ -66,6 +70,8 @@ public class EventsController(IEventService eventService) : ControllerBase
 
     [HttpDelete("{id}")]
     [Authorize(Roles = "Admin")]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status403Forbidden)]
     public async Task<ActionResult> Delete(int id)
     {
         if (!await eventService.RemoveAsync(id))

@@ -1,41 +1,48 @@
-using EventApi.Application.Abstractions;
-using EventApi.Application.DTO;
-using EventApi.Application.Services;
-using EventApi.Domain.Entities;
-using EventApi.Infrastructure.Persistence;
-using EventApi.Infrastructure.Persistence.Repositories;
+using EventApi.Events.Application.Abstractions;
+using EventApi.Events.Application.DTO;
+using EventApi.Events.Application.Services;
+using EventApi.Events.Domain.Entities;
+using EventApi.Events.Infrastructure.Persistence;
+using EventApi.Events.Infrastructure.Persistence.Repositories;
+using EventApi.Shared.Contracts;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace EventApi.Tests;
 
-public class EventServiceTests : IDisposable
+public sealed class EventServiceTests : IDisposable
 {
     private readonly ServiceProvider _serviceProvider;
+    private readonly FakeEventSeatReservationPublisher _publisher = new();
 
     public EventServiceTests()
     {
-        var dbName = Guid.NewGuid().ToString();
         var services = new ServiceCollection();
-        services.AddDbContext<AppDbContext>(options =>
-            options.UseInMemoryDatabase(dbName));
+        services.AddDbContext<EventsDbContext>(options =>
+            options.UseInMemoryDatabase(Guid.NewGuid().ToString()));
+        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<IEventSeatReservationPublisher>(_publisher);
         services.AddScoped<IEventRepository, EventRepository>();
-        services.AddScoped<IUnitOfWork, EfUnitOfWork>();
         services.AddScoped<IEventService, EventService>();
+        services.AddScoped<IEventSeatReservationService, EventSeatReservationService>();
 
         _serviceProvider = services.BuildServiceProvider();
     }
 
     [Fact]
-    public async Task CreateEventAsync_ShouldCreateEventWithSeats()
+    public async Task CreateEventAsync_ShouldCreateEventWithAvailableSeats()
     {
         using var scope = _serviceProvider.CreateScope();
         var service = scope.ServiceProvider.GetRequiredService<IEventService>();
-        var startAt = new DateTime(2026, 05, 10, 9, 0, 0, DateTimeKind.Utc);
-        var endAt = startAt.AddHours(1);
+        var startAt = DateTime.UtcNow.AddDays(30);
 
-        var @event = await service.CreateEventAsync("Architecture review", null, startAt, endAt, totalSeats: 15);
+        var @event = await service.CreateEventAsync(
+            "Architecture review",
+            null,
+            startAt,
+            startAt.AddHours(1),
+            totalSeats: 15);
 
         var result = await service.GetByIdAsync(@event.Id);
 
@@ -50,13 +57,13 @@ public class EventServiceTests : IDisposable
     {
         using var scope = _serviceProvider.CreateScope();
         var service = scope.ServiceProvider.GetRequiredService<IEventService>();
-        var from = new DateTime(2026, 05, 10, 0, 0, 0, DateTimeKind.Utc);
-        var to = new DateTime(2026, 05, 11, 23, 59, 59, DateTimeKind.Utc);
+        var from = DateTime.UtcNow.AddDays(10);
+        var to = from.AddDays(2);
 
-        await service.AddAsync(CreateEvent("Team sync", startAt: from, endAt: from.AddHours(1)));
-        await service.AddAsync(CreateEvent("Client sync", startAt: from.AddDays(1), endAt: from.AddDays(1).AddHours(1)));
-        await service.AddAsync(CreateEvent("Team retro", startAt: from.AddDays(2), endAt: from.AddDays(2).AddHours(1)));
-        await service.AddAsync(CreateEvent("Workshop", startAt: from, endAt: from.AddHours(2)));
+        await service.CreateEventAsync("Team sync", null, from, from.AddHours(1), 10);
+        await service.CreateEventAsync("Client sync", null, from.AddDays(1), from.AddDays(1).AddHours(1), 10);
+        await service.CreateEventAsync("Team retro", null, from.AddDays(3), from.AddDays(3).AddHours(1), 10);
+        await service.CreateEventAsync("Workshop", null, from, from.AddHours(2), 10);
 
         var result = await service.GetAllAsync(title: "sync", from: from, to: to, page: 1, pageSize: 10);
 
@@ -67,110 +74,72 @@ public class EventServiceTests : IDisposable
     }
 
     [Fact]
-    public async Task UpdateEventAsync_ShouldUpdateExistingEvent()
+    public async Task UpdateEventAsync_ShouldKeepReservedSeats_WhenTotalSeatsChanges()
     {
         using var scope = _serviceProvider.CreateScope();
         var service = scope.ServiceProvider.GetRequiredService<IEventService>();
-        var @event = CreateEvent("Sprint planning");
-        await service.AddAsync(@event);
+        var startAt = DateTime.UtcNow.AddDays(30);
+        var @event = await service.CreateEventAsync("Sprint planning", null, startAt, startAt.AddHours(1), 5);
+        @event.TryReserveSeats(2);
 
-        var request = new EventRequest
-        {
-            Title = "Updated sprint planning",
-            Description = "Updated description",
-            StartAt = @event.StartAt,
-            EndAt = @event.StartAt.AddHours(2),
-            TotalSeats = 7
-        };
-
-        var updated = await service.UpdateEventAsync(@event.Id, request);
+        var updated = await service.UpdateEventAsync(
+            @event.Id,
+            new EventRequest
+            {
+                Title = "Updated sprint planning",
+                Description = "Updated description",
+                StartAt = startAt,
+                EndAt = startAt.AddHours(2),
+                TotalSeats = 7
+            });
 
         var result = await service.GetByIdAsync(@event.Id);
 
         updated.Should().BeTrue();
         result.Should().NotBeNull();
         result!.Title.Should().Be("Updated sprint planning");
-        result.Description.Should().Be("Updated description");
-        result.EndAt.Should().Be(@event.StartAt.AddHours(2));
         result.TotalSeats.Should().Be(7);
-        result.AvailableSeats.Should().Be(7);
+        result.AvailableSeats.Should().Be(5);
     }
 
     [Fact]
-    public async Task RemoveAsync_ShouldDeleteExistingEvent()
+    public async Task HandleBookingCreatedAsync_ShouldReserveSeatAndPublishReservedEvent()
     {
         using var scope = _serviceProvider.CreateScope();
-        var service = scope.ServiceProvider.GetRequiredService<IEventService>();
-        var @event = CreateEvent("To remove");
-        await service.AddAsync(@event);
+        var eventService = scope.ServiceProvider.GetRequiredService<IEventService>();
+        var reservationService = scope.ServiceProvider.GetRequiredService<IEventSeatReservationService>();
+        var startAt = DateTime.UtcNow.AddDays(30);
+        var @event = await eventService.CreateEventAsync("Kafka event", null, startAt, startAt.AddHours(1), 2);
 
-        var removed = await service.RemoveAsync(@event.Id);
+        await reservationService.HandleBookingCreatedAsync(new BookingCreated(1, @event.Id, 10, 1, DateTime.UtcNow));
 
-        removed.Should().BeTrue();
-        (await service.GetByIdAsync(@event.Id)).Should().BeNull();
+        var result = await eventService.GetByIdAsync(@event.Id);
+        result!.AvailableSeats.Should().Be(1);
+        _publisher.Reserved.Should().ContainSingle(message =>
+            message.BookingId == 1 &&
+            message.EventId == @event.Id &&
+            message.UserId == 10 &&
+            message.Seats == 1);
+        _publisher.Unavailable.Should().BeEmpty();
     }
 
     [Fact]
-    public void Create_ShouldThrowArgumentException_WhenTitleIsInvalid()
+    public async Task HandleBookingCreatedAsync_ShouldPublishUnavailable_WhenEventAlreadyStarted()
     {
-        var startAt = new DateTime(2026, 05, 10, 9, 0, 0, DateTimeKind.Utc);
-        var endAt = startAt.AddHours(1);
+        using var scope = _serviceProvider.CreateScope();
+        var eventRepository = scope.ServiceProvider.GetRequiredService<IEventRepository>();
+        var reservationService = scope.ServiceProvider.GetRequiredService<IEventSeatReservationService>();
+        var startAt = DateTime.UtcNow.AddHours(-2);
+        var @event = new Event("Started event", null, startAt, startAt.AddHours(1), 2);
+        await eventRepository.AddAsync(@event);
 
-        Action act = () => new Event("   ", null, startAt, endAt);
+        await reservationService.HandleBookingCreatedAsync(new BookingCreated(1, @event.Id, 10, 1, DateTime.UtcNow));
 
-        act.Should().Throw<ArgumentException>()
-            .WithMessage("*Title is required*");
-    }
-
-    [Fact]
-    public void Create_ShouldThrowArgumentOutOfRangeException_WhenTotalSeatsIsInvalid()
-    {
-        var startAt = new DateTime(2026, 05, 10, 9, 0, 0, DateTimeKind.Utc);
-        var endAt = startAt.AddHours(1);
-
-        Action act = () => Event.Create("Invalid capacity", null, startAt, endAt, totalSeats: 0);
-
-        act.Should().Throw<ArgumentOutOfRangeException>()
-            .WithMessage("*TotalSeats must be greater than 0*");
-    }
-
-    [Fact]
-    public void TryReserveSeats_ShouldDecreaseAvailableSeats_WhenEnoughSeatsExist()
-    {
-        var @event = CreateEvent("Limited event", totalSeats: 3);
-
-        var reserved = @event.TryReserveSeats(2);
-
-        reserved.Should().BeTrue();
-        @event.AvailableSeats.Should().Be(1);
-    }
-
-    [Fact]
-    public void ReleaseSeats_ShouldIncreaseAvailableSeatsWithoutExceedingTotalSeats()
-    {
-        var @event = CreateEvent("Limited event", totalSeats: 3);
-        @event.TryReserveSeats(2);
-
-        @event.ReleaseSeats(5);
-
-        @event.AvailableSeats.Should().Be(3);
-    }
-
-    [Fact]
-    public void UpdateDetails_ShouldKeepReservedSeats_WhenTotalSeatsChanges()
-    {
-        var @event = CreateEvent("Limited event", totalSeats: 3);
-        @event.TryReserveSeats(2);
-
-        @event.UpdateDetails(
-            "Expanded event",
-            "Updated capacity",
-            @event.StartAt,
-            @event.EndAt,
-            totalSeats: 5);
-
-        @event.TotalSeats.Should().Be(5);
-        @event.AvailableSeats.Should().Be(3);
+        _publisher.Reserved.Should().BeEmpty();
+        _publisher.Unavailable.Should().ContainSingle(message =>
+            message.BookingId == 1 &&
+            message.EventId == @event.Id &&
+            message.Reason.Contains("already started"));
     }
 
     [Fact]
@@ -193,17 +162,21 @@ public class EventServiceTests : IDisposable
         _serviceProvider.Dispose();
     }
 
-    private static Event CreateEvent(
-        string title,
-        string? description = null,
-        DateTime? startAt = null,
-        DateTime? endAt = null,
-        int totalSeats = 1)
+    private sealed class FakeEventSeatReservationPublisher : IEventSeatReservationPublisher
     {
-        var actualStartAt = startAt ?? new DateTime(2026, 05, 10, 9, 0, 0, DateTimeKind.Utc);
-        var actualEndAt = endAt ?? actualStartAt.AddHours(1);
+        public List<EventSeatReserved> Reserved { get; } = [];
+        public List<EventSeatUnavailable> Unavailable { get; } = [];
 
-        return new Event(title, description, actualStartAt, actualEndAt, totalSeats);
+        public Task PublishSeatReservedAsync(EventSeatReserved message, CancellationToken cancellationToken = default)
+        {
+            Reserved.Add(message);
+            return Task.CompletedTask;
+        }
+
+        public Task PublishSeatUnavailableAsync(EventSeatUnavailable message, CancellationToken cancellationToken = default)
+        {
+            Unavailable.Add(message);
+            return Task.CompletedTask;
+        }
     }
 }
-

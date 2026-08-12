@@ -1,5 +1,4 @@
 using EventApi.Bookings.Application.Abstractions;
-using EventApi.Bookings.Infrastructure.BackgroundServices;
 using EventApi.Bookings.Infrastructure.Messaging;
 using EventApi.Bookings.Infrastructure.Persistence;
 using EventApi.Bookings.Infrastructure.Persistence.Repositories;
@@ -25,7 +24,7 @@ public static class DependencyInjection
 
         services.AddScoped<IBookingRepository, BookingRepository>();
         services.AddSingleton<IBookingEventPublisher, KafkaBookingEventPublisher>();
-        services.AddHostedService<BookingProcessingBackgroundService>();
+        services.AddHostedService<EventSeatReservationResultConsumerBackgroundService>();
 
         return services;
     }

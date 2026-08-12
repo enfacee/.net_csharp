@@ -89,6 +89,73 @@ public class BookingService(
         }
     }
 
+    public async Task<Booking?> ConfirmBookingAsync(
+        int bookingId,
+        CancellationToken cancellationToken = default)
+    {
+        await BookingSemaphore.WaitAsync(cancellationToken);
+        try
+        {
+            if (await bookingRepository.GetByIdAsync(bookingId, cancellationToken) is not { } booking)
+                return null;
+
+            if (booking.Status != BookingStatus.Pending)
+                return booking;
+
+            var confirmedAt = timeProvider.GetUtcNow().UtcDateTime;
+            booking.Confirm(confirmedAt);
+            await bookingRepository.SaveChangesAsync(cancellationToken);
+            await bookingEventPublisher.PublishBookingConfirmedAsync(
+                new BookingConfirmed(
+                    booking.Id,
+                    booking.EventId,
+                    booking.UserId,
+                    Seats: 1,
+                    confirmedAt),
+                cancellationToken);
+
+            return booking;
+        }
+        finally
+        {
+            BookingSemaphore.Release();
+        }
+    }
+
+    public async Task<Booking?> RejectBookingAsync(
+        int bookingId,
+        CancellationToken cancellationToken = default)
+    {
+        await BookingSemaphore.WaitAsync(cancellationToken);
+        try
+        {
+            if (await bookingRepository.GetByIdAsync(bookingId, cancellationToken) is not { } booking)
+                return null;
+
+            if (booking.Status != BookingStatus.Pending)
+                return booking;
+
+            var rejectedAt = timeProvider.GetUtcNow().UtcDateTime;
+            booking.Reject(rejectedAt);
+            await bookingRepository.SaveChangesAsync(cancellationToken);
+            await bookingEventPublisher.PublishBookingRejectedAsync(
+                new BookingRejected(
+                    booking.Id,
+                    booking.EventId,
+                    booking.UserId,
+                    Seats: 1,
+                    Reason: "Seat reservation rejected.",
+                    rejectedAt),
+                cancellationToken);
+
+            return booking;
+        }
+        finally
+        {
+            BookingSemaphore.Release();
+        }
+    }
+
     public async Task<bool> CancelBookingAsync(
         int bookingId,
         int currentUserId,

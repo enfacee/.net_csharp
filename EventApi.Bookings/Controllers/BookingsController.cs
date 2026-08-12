@@ -16,6 +16,7 @@ public class BookingsController(IBookingService bookingService) : ControllerBase
     [HttpPost("events/{eventId}/book")]
     [Authorize]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status409Conflict)]
     public async Task<ActionResult<BookingResponse>> CreateBooking(
         int eventId,
@@ -29,6 +30,8 @@ public class BookingsController(IBookingService bookingService) : ControllerBase
 
     [HttpGet("bookings/{id}", Name = GetByIdRouteName)]
     [Authorize]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status404NotFound)]
     public async Task<ActionResult<BookingResponse>> GetById(int id, CancellationToken cancellationToken)
     {
         if (await bookingService.GetBookingByIdAsync(id, cancellationToken) is not { } booking)
