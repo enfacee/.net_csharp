@@ -3,6 +3,7 @@
   <ItemGroup>
     <ProjectReference Include="..\EventApi.Bookings.Application\EventApi.Bookings.Application.csproj" />
     <ProjectReference Include="..\EventApi.Bookings.Domain\EventApi.Bookings.Domain.csproj" />
+    <ProjectReference Include="..\EventApi.Shared.Contracts\EventApi.Shared.Contracts.csproj" />
   </ItemGroup>
 
   <PropertyGroup>
