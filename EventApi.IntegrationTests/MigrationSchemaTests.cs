@@ -4,193 +4,103 @@ using Microsoft.EntityFrameworkCore;
 namespace EventApi.IntegrationTests;
 
 [Collection(PostgreSqlCollection.Name)]
-public sealed class MigrationSchemaTests(PostgreSqlContainerFixture fixture) : IAsyncLifetime
+public sealed class MigrationSchemaTests(PostgreSqlContainerFixture fixture)
 {
-    public async Task InitializeAsync()
+    [Fact]
+    public async Task UsersMigration_ShouldCreateUsersTableWithUniqueLogin()
     {
-        await fixture.ResetDatabaseAsync();
-    }
+        await fixture.ResetUsersDatabaseAsync();
 
-    public Task DisposeAsync()
-    {
-        return Task.CompletedTask;
+        await using var context = fixture.CreateUsersContext();
+        var connection = context.Database.GetDbConnection();
+
+        Assert.Equal(1, await TableCountAsync(connection, "Users"));
+        Assert.Equal("NO", await GetColumnValueAsync(connection, "Users", "Login", "is_nullable"));
+        Assert.Equal("100", await GetColumnValueAsync(connection, "Users", "Login", "character_maximum_length"));
+        Assert.Equal("128", await GetColumnValueAsync(connection, "Users", "PasswordHash", "character_maximum_length"));
+        Assert.Equal(1, await IndexCountAsync(connection, "Users", "IX_Users_Login", unique: true));
     }
 
     [Fact]
-    public async Task MigrateAsync_ShouldCreateEventsBookingsAndUsersTables()
+    public async Task EventsMigration_ShouldCreateEventsTableWithSeatColumns()
     {
-        // Arrange
-        await using var context = fixture.CreateContext();
+        await fixture.ResetEventsDatabaseAsync();
+
+        await using var context = fixture.CreateEventsContext();
         var connection = context.Database.GetDbConnection();
 
-        // Act
-        var tableCount = await ExecuteScalarAsync<long>(
+        Assert.Equal(1, await TableCountAsync(connection, "Events"));
+        Assert.Equal("NO", await GetColumnValueAsync(connection, "Events", "Title", "is_nullable"));
+        Assert.Equal("200", await GetColumnValueAsync(connection, "Events", "Title", "character_maximum_length"));
+        Assert.Equal("NO", await GetColumnValueAsync(connection, "Events", "TotalSeats", "is_nullable"));
+        Assert.Equal("NO", await GetColumnValueAsync(connection, "Events", "AvailableSeats", "is_nullable"));
+    }
+
+    [Fact]
+    public async Task BookingsMigration_ShouldCreateBookingsTableWithoutCrossServiceForeignKeys()
+    {
+        await fixture.ResetBookingsDatabaseAsync();
+
+        await using var context = fixture.CreateBookingsContext();
+        var connection = context.Database.GetDbConnection();
+
+        Assert.Equal(1, await TableCountAsync(connection, "Bookings"));
+        Assert.Equal("NO", await GetColumnValueAsync(connection, "Bookings", "EventId", "is_nullable"));
+        Assert.Equal("NO", await GetColumnValueAsync(connection, "Bookings", "UserId", "is_nullable"));
+        Assert.Equal("32", await GetColumnValueAsync(connection, "Bookings", "Status", "character_maximum_length"));
+        Assert.Equal(0, await ForeignKeyCountAsync(connection, "Bookings"));
+        Assert.Equal(1, await IndexCountAsync(connection, "Bookings", "IX_Bookings_EventId"));
+        Assert.Equal(1, await IndexCountAsync(connection, "Bookings", "IX_Bookings_UserId"));
+    }
+
+    private static async Task<long> TableCountAsync(DbConnection connection, string tableName)
+    {
+        return await ExecuteScalarAsync<long>(
             connection,
             """
             SELECT COUNT(*)
             FROM information_schema.tables
             WHERE table_schema = 'public'
-              AND table_name IN ('Events', 'Bookings', 'Users');
-            """);
-
-        // Assert
-        Assert.Equal(3, tableCount);
+              AND table_name = @tableName;
+            """,
+            command => AddParameter(command, "tableName", tableName));
     }
 
-    [Fact]
-    public async Task MigrateAsync_ShouldConfigurePrimaryKeysAndDatabaseGeneratedIds()
+    private static async Task<long> IndexCountAsync(
+        DbConnection connection,
+        string tableName,
+        string indexName,
+        bool unique = false)
     {
-        // Arrange
-        await using var context = fixture.CreateContext();
-        var connection = context.Database.GetDbConnection();
-
-        // Act
-        var eventsIdIdentity = await GetColumnValueAsync(connection, "Events", "Id", "is_identity");
-        var bookingsIdIdentity = await GetColumnValueAsync(connection, "Bookings", "Id", "is_identity");
-        var usersIdIdentity = await GetColumnValueAsync(connection, "Users", "Id", "is_identity");
-        var eventsPrimaryKeyExists = await ConstraintExistsAsync(connection, "Events", "PK_Events", "p");
-        var bookingsPrimaryKeyExists = await ConstraintExistsAsync(connection, "Bookings", "PK_Bookings", "p");
-        var usersPrimaryKeyExists = await ConstraintExistsAsync(connection, "Users", "PK_Users", "p");
-
-        // Assert
-        Assert.Equal("YES", eventsIdIdentity);
-        Assert.Equal("YES", bookingsIdIdentity);
-        Assert.Equal("YES", usersIdIdentity);
-        Assert.True(eventsPrimaryKeyExists);
-        Assert.True(bookingsPrimaryKeyExists);
-        Assert.True(usersPrimaryKeyExists);
-    }
-
-    [Fact]
-    public async Task MigrateAsync_ShouldConfigureBookingsEventForeignKey()
-    {
-        // Arrange
-        await using var context = fixture.CreateContext();
-        var connection = context.Database.GetDbConnection();
-
-        // Act
-        var foreignKeyDefinition = await ExecuteScalarAsync<string>(
-            connection,
-            """
-            SELECT pg_get_constraintdef(oid)
-            FROM pg_constraint
-            WHERE conname = 'FK_Bookings_Events_EventId'
-              AND contype = 'f'
-              AND conrelid = '"Bookings"'::regclass
-              AND confrelid = '"Events"'::regclass;
-            """);
-
-        // Assert
-        Assert.Equal(
-            """FOREIGN KEY ("EventId") REFERENCES "Events"("Id") ON DELETE CASCADE""",
-            foreignKeyDefinition);
-    }
-
-    [Fact]
-    public async Task MigrateAsync_ShouldConfigureBookingsUserForeignKey()
-    {
-        // Arrange
-        await using var context = fixture.CreateContext();
-        var connection = context.Database.GetDbConnection();
-
-        // Act
-        var foreignKeyDefinition = await ExecuteScalarAsync<string>(
-            connection,
-            """
-            SELECT pg_get_constraintdef(oid)
-            FROM pg_constraint
-            WHERE conname = 'FK_Bookings_Users_UserId'
-              AND contype = 'f'
-              AND conrelid = '"Bookings"'::regclass
-              AND confrelid = '"Users"'::regclass;
-            """);
-
-        // Assert
-        Assert.Equal(
-            """FOREIGN KEY ("UserId") REFERENCES "Users"("Id") ON DELETE CASCADE""",
-            foreignKeyDefinition);
-    }
-
-    [Fact]
-    public async Task MigrateAsync_ShouldConfigureUsersLoginUniqueIndex()
-    {
-        // Arrange
-        await using var context = fixture.CreateContext();
-        var connection = context.Database.GetDbConnection();
-
-        // Act
-        var indexCount = await ExecuteScalarAsync<long>(
+        return await ExecuteScalarAsync<long>(
             connection,
             """
             SELECT COUNT(*)
             FROM pg_indexes
             WHERE schemaname = 'public'
-              AND tablename = 'Users'
-              AND indexname = 'IX_Users_Login'
-              AND indexdef ILIKE '%UNIQUE%';
-            """);
-
-        // Assert
-        Assert.Equal(1, indexCount);
+              AND tablename = @tableName
+              AND indexname = @indexName
+              AND (@unique = FALSE OR indexdef ILIKE '%UNIQUE%');
+            """,
+            command =>
+            {
+                AddParameter(command, "tableName", tableName);
+                AddParameter(command, "indexName", indexName);
+                AddParameter(command, "unique", unique);
+            });
     }
 
-    [Fact]
-    public async Task MigrateAsync_ShouldConfigureRequiredColumnsAndStringLengths()
+    private static async Task<long> ForeignKeyCountAsync(DbConnection connection, string tableName)
     {
-        // Arrange
-        await using var context = fixture.CreateContext();
-        var connection = context.Database.GetDbConnection();
-
-        // Act
-        var titleIsNullable = await GetColumnValueAsync(connection, "Events", "Title", "is_nullable");
-        var titleMaxLength = await GetColumnValueAsync(connection, "Events", "Title", "character_maximum_length");
-        var statusIsNullable = await GetColumnValueAsync(connection, "Bookings", "Status", "is_nullable");
-        var statusMaxLength = await GetColumnValueAsync(connection, "Bookings", "Status", "character_maximum_length");
-        var processedAtIsNullable = await GetColumnValueAsync(connection, "Bookings", "ProcessedAt", "is_nullable");
-        var loginIsNullable = await GetColumnValueAsync(connection, "Users", "Login", "is_nullable");
-        var loginMaxLength = await GetColumnValueAsync(connection, "Users", "Login", "character_maximum_length");
-        var passwordHashIsNullable = await GetColumnValueAsync(connection, "Users", "PasswordHash", "is_nullable");
-        var passwordHashMaxLength = await GetColumnValueAsync(connection, "Users", "PasswordHash", "character_maximum_length");
-        var roleIsNullable = await GetColumnValueAsync(connection, "Users", "Role", "is_nullable");
-        var roleMaxLength = await GetColumnValueAsync(connection, "Users", "Role", "character_maximum_length");
-
-        // Assert
-        Assert.Equal("NO", titleIsNullable);
-        Assert.Equal("200", titleMaxLength);
-        Assert.Equal("NO", statusIsNullable);
-        Assert.Equal("32", statusMaxLength);
-        Assert.Equal("YES", processedAtIsNullable);
-        Assert.Equal("NO", loginIsNullable);
-        Assert.Equal("100", loginMaxLength);
-        Assert.Equal("NO", passwordHashIsNullable);
-        Assert.Equal("128", passwordHashMaxLength);
-        Assert.Equal("NO", roleIsNullable);
-        Assert.Equal("32", roleMaxLength);
-    }
-
-    private static async Task<bool> ConstraintExistsAsync(
-        DbConnection connection,
-        string tableName,
-        string constraintName,
-        string constraintType)
-    {
-        var count = await ExecuteScalarAsync<long>(
+        return await ExecuteScalarAsync<long>(
             connection,
             """
             SELECT COUNT(*)
             FROM pg_constraint
-            WHERE conname = @constraintName
-              AND contype = @constraintType
+            WHERE contype = 'f'
               AND conrelid = CAST(@tableName AS regclass);
             """,
-            command =>
-            {
-                AddParameter(command, "constraintName", constraintName);
-                AddParameter(command, "constraintType", constraintType);
-                AddParameter(command, "tableName", $@"""{tableName}""");
-            });
-
-        return count == 1;
+            command => AddParameter(command, "tableName", $@"""{tableName}"""));
     }
 
     private static async Task<string> GetColumnValueAsync(

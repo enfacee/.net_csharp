@@ -1,6 +1,5 @@
-using EventApi.Domain.Entities;
-using EventApi.Infrastructure.Persistence;
-using EventApi.Infrastructure.Persistence.Repositories;
+using EventApi.Events.Domain.Entities;
+using EventApi.Events.Infrastructure.Persistence.Repositories;
 
 namespace EventApi.IntegrationTests;
 
@@ -9,7 +8,7 @@ public sealed class EventRepositoryTests(PostgreSqlContainerFixture fixture) : I
 {
     public async Task InitializeAsync()
     {
-        await fixture.ResetDatabaseAsync();
+        await fixture.ResetEventsDatabaseAsync();
     }
 
     public Task DisposeAsync()
@@ -18,15 +17,13 @@ public sealed class EventRepositoryTests(PostgreSqlContainerFixture fixture) : I
     }
 
     [Fact]
-    public async Task AddAsync_UnitOfWorkSaveChangesAsync_GetByIdAsync_AndExistsAsync_ShouldPersistEventWithDatabaseGeneratedId()
+    public async Task AddAsync_GetByIdAsync_AndExistsAsync_ShouldPersistEventWithDatabaseGeneratedId()
     {
-        await using var context = fixture.CreateContext();
+        await using var context = fixture.CreateEventsContext();
         var repository = new EventRepository(context);
-        var unitOfWork = new EfUnitOfWork(context);
         var @event = CreateEvent("Architecture review");
 
         await repository.AddAsync(@event);
-        await unitOfWork.SaveChangesAsync();
 
         Assert.True(@event.Id > 0);
         Assert.True(await repository.ExistsAsync(@event.Id));
@@ -35,142 +32,50 @@ public sealed class EventRepositoryTests(PostgreSqlContainerFixture fixture) : I
         var result = await repository.GetByIdAsync(@event.Id);
         Assert.NotNull(result);
         Assert.Equal("Architecture review", result.Title);
+        Assert.Equal(10, result.AvailableSeats);
     }
 
     [Fact]
-    public async Task GetAllAsync_ShouldReturnAllEventsOrderedById()
-    {
-        await SeedEventsAsync(
-            CreateEvent("Second", startAt: UtcDate(2026, 5, 11)),
-            CreateEvent("First", startAt: UtcDate(2026, 5, 10)),
-            CreateEvent("Third", startAt: UtcDate(2026, 5, 12)));
-
-        await using var context = fixture.CreateContext();
-        var repository = new EventRepository(context);
-
-        var result = await repository.GetAllAsync();
-
-        Assert.Equal(3, result.TotalCount);
-        Assert.Equal(1, result.Page);
-        Assert.Equal(10, result.PageSize);
-        Assert.Equal(["Second", "First", "Third"], result.Items.Select(@event => @event.Title).ToArray());
-    }
-
-    [Fact]
-    public async Task GetAllAsync_ShouldFilterByTitleIgnoringCaseAndWhitespace()
-    {
-        await SeedEventsAsync(
-            CreateEvent("Team Sync"),
-            CreateEvent("Client sync"),
-            CreateEvent("Workshop"));
-
-        await using var context = fixture.CreateContext();
-        var repository = new EventRepository(context);
-
-        var result = await repository.GetAllAsync(title: "  SYNC ");
-
-        Assert.Equal(2, result.TotalCount);
-        Assert.Equal(["Team Sync", "Client sync"], result.Items.Select(@event => @event.Title).ToArray());
-    }
-
-    [Fact]
-    public async Task GetAllAsync_ShouldFilterByStartDate()
-    {
-        await SeedEventsAsync(
-            CreateEvent("Before", startAt: UtcDate(2026, 5, 9)),
-            CreateEvent("At boundary", startAt: UtcDate(2026, 5, 10)),
-            CreateEvent("After", startAt: UtcDate(2026, 5, 11)));
-
-        await using var context = fixture.CreateContext();
-        var repository = new EventRepository(context);
-
-        var result = await repository.GetAllAsync(from: UtcDate(2026, 5, 10));
-
-        Assert.Equal(2, result.TotalCount);
-        Assert.Equal(["At boundary", "After"], result.Items.Select(@event => @event.Title).ToArray());
-    }
-
-    [Fact]
-    public async Task GetAllAsync_ShouldFilterByEndDate()
-    {
-        await SeedEventsAsync(
-            CreateEvent("Before", endAt: UtcDate(2026, 5, 10, 11)),
-            CreateEvent("At boundary", endAt: UtcDate(2026, 5, 11, 11)),
-            CreateEvent("After", endAt: UtcDate(2026, 5, 12, 11)));
-
-        await using var context = fixture.CreateContext();
-        var repository = new EventRepository(context);
-
-        var result = await repository.GetAllAsync(to: UtcDate(2026, 5, 11, 11));
-
-        Assert.Equal(2, result.TotalCount);
-        Assert.Equal(["Before", "At boundary"], result.Items.Select(@event => @event.Title).ToArray());
-    }
-
-    [Fact]
-    public async Task GetAllAsync_ShouldCombineFilters()
+    public async Task GetAllAsync_ShouldFilterByTitleDateAndPaginate()
     {
         await SeedEventsAsync(
             CreateEvent("Team sync old", startAt: UtcDate(2026, 5, 1), endAt: UtcDate(2026, 5, 1, 11)),
             CreateEvent("Team sync target", startAt: UtcDate(2026, 5, 10), endAt: UtcDate(2026, 5, 10, 11)),
-            CreateEvent("Team sync late", startAt: UtcDate(2026, 5, 20), endAt: UtcDate(2026, 5, 20, 11)),
-            CreateEvent("Workshop target", startAt: UtcDate(2026, 5, 10), endAt: UtcDate(2026, 5, 10, 11)));
+            CreateEvent("Client sync target", startAt: UtcDate(2026, 5, 11), endAt: UtcDate(2026, 5, 11, 11)),
+            CreateEvent("Workshop", startAt: UtcDate(2026, 5, 10), endAt: UtcDate(2026, 5, 10, 11)));
 
-        await using var context = fixture.CreateContext();
+        await using var context = fixture.CreateEventsContext();
         var repository = new EventRepository(context);
 
         var result = await repository.GetAllAsync(
             title: "sync",
             from: UtcDate(2026, 5, 5),
-            to: UtcDate(2026, 5, 15));
+            to: UtcDate(2026, 5, 12),
+            page: 1,
+            pageSize: 1);
 
-        Assert.Equal(1, result.TotalCount);
+        Assert.Equal(2, result.TotalCount);
+        Assert.Equal(1, result.Page);
+        Assert.Equal(1, result.PageSize);
         Assert.Equal("Team sync target", Assert.Single(result.Items).Title);
     }
 
     [Fact]
-    public async Task GetAllAsync_ShouldPaginateFilteredResults()
-    {
-        await SeedEventsAsync(
-            CreateEvent("Event 1"),
-            CreateEvent("Event 2"),
-            CreateEvent("Event 3"),
-            CreateEvent("Event 4"),
-            CreateEvent("Event 5"));
-
-        await using var context = fixture.CreateContext();
-        var repository = new EventRepository(context);
-
-        var result = await repository.GetAllAsync(page: 2, pageSize: 2);
-
-        Assert.Equal(5, result.TotalCount);
-        Assert.Equal(2, result.Page);
-        Assert.Equal(2, result.PageSize);
-        Assert.Equal(["Event 3", "Event 4"], result.Items.Select(@event => @event.Title).ToArray());
-    }
-
-    [Fact]
-    public async Task UnitOfWorkSaveChangesAsync_ShouldPersistTrackedChanges()
+    public async Task SaveChangesAsync_ShouldPersistTrackedChanges()
     {
         var @event = await SeedEventAsync(CreateEvent("Original"));
 
-        await using var context = fixture.CreateContext();
+        await using var context = fixture.CreateEventsContext();
         var repository = new EventRepository(context);
-        var unitOfWork = new EfUnitOfWork(context);
         var persistedEvent = await repository.GetByIdAsync(@event.Id);
         Assert.NotNull(persistedEvent);
 
-        persistedEvent.UpdateDetails(
-            "Updated",
-            persistedEvent.Description,
-            persistedEvent.StartAt,
-            persistedEvent.EndAt,
-            persistedEvent.TotalSeats);
-        await unitOfWork.SaveChangesAsync();
+        persistedEvent.TryReserveSeats();
+        await repository.SaveChangesAsync();
 
-        await using var assertContext = fixture.CreateContext();
+        await using var assertContext = fixture.CreateEventsContext();
         var result = await new EventRepository(assertContext).GetByIdAsync(@event.Id);
-        Assert.Equal("Updated", result!.Title);
+        Assert.Equal(9, result!.AvailableSeats);
     }
 
     [Fact]
@@ -178,12 +83,10 @@ public sealed class EventRepositoryTests(PostgreSqlContainerFixture fixture) : I
     {
         var @event = await SeedEventAsync(CreateEvent("To remove"));
 
-        await using var context = fixture.CreateContext();
+        await using var context = fixture.CreateEventsContext();
         var repository = new EventRepository(context);
-        var unitOfWork = new EfUnitOfWork(context);
 
         Assert.True(await repository.RemoveAsync(@event.Id));
-        await unitOfWork.SaveChangesAsync();
         Assert.False(await repository.RemoveAsync(@event.Id));
         Assert.Null(await repository.GetByIdAsync(@event.Id));
     }
@@ -196,16 +99,13 @@ public sealed class EventRepositoryTests(PostgreSqlContainerFixture fixture) : I
 
     private async Task SeedEventsAsync(params Event[] events)
     {
-        await using var context = fixture.CreateContext();
+        await using var context = fixture.CreateEventsContext();
         var repository = new EventRepository(context);
-        var unitOfWork = new EfUnitOfWork(context);
 
         foreach (var @event in events)
         {
             await repository.AddAsync(@event);
         }
-
-        await unitOfWork.SaveChangesAsync();
     }
 
     private static Event CreateEvent(

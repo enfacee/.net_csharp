@@ -1,6 +1,5 @@
-using EventApi.Domain.Entities;
-using EventApi.Infrastructure.Persistence;
-using EventApi.Infrastructure.Persistence.Repositories;
+using EventApi.Users.Domain.Entities;
+using EventApi.Users.Infrastructure.Persistence.Repositories;
 using Microsoft.EntityFrameworkCore;
 
 namespace EventApi.IntegrationTests;
@@ -10,7 +9,7 @@ public sealed class UserRepositoryTests(PostgreSqlContainerFixture fixture) : IA
 {
     public async Task InitializeAsync()
     {
-        await fixture.ResetDatabaseAsync();
+        await fixture.ResetUsersDatabaseAsync();
     }
 
     public Task DisposeAsync()
@@ -19,15 +18,13 @@ public sealed class UserRepositoryTests(PostgreSqlContainerFixture fixture) : IA
     }
 
     [Fact]
-    public async Task AddAsync_UnitOfWorkSaveChangesAsync_AndGetByLoginAsync_ShouldPersistUser()
+    public async Task AddAsync_GetByLoginAsync_AndExistsByLoginAsync_ShouldPersistUser()
     {
-        await using var context = fixture.CreateContext();
+        await using var context = fixture.CreateUsersContext();
         var repository = new UserRepository(context);
-        var unitOfWork = new EfUnitOfWork(context);
         var user = new User("repository-user", "HASH", UserRole.Admin);
 
         await repository.AddAsync(user);
-        await unitOfWork.SaveChangesAsync();
 
         var result = await repository.GetByLoginAsync("repository-user");
 
@@ -41,15 +38,14 @@ public sealed class UserRepositoryTests(PostgreSqlContainerFixture fixture) : IA
     }
 
     [Fact]
-    public async Task UnitOfWorkSaveChangesAsync_ShouldEnforceUniqueLogin()
+    public async Task AddAsync_ShouldEnforceUniqueLogin()
     {
-        await using var context = fixture.CreateContext();
+        await using var context = fixture.CreateUsersContext();
         var repository = new UserRepository(context);
-        var unitOfWork = new EfUnitOfWork(context);
 
         await repository.AddAsync(new User("duplicate-user", "HASH1", UserRole.User));
-        await repository.AddAsync(new User("duplicate-user", "HASH2", UserRole.Admin));
 
-        await Assert.ThrowsAsync<DbUpdateException>(() => unitOfWork.SaveChangesAsync());
+        await Assert.ThrowsAsync<DbUpdateException>(() =>
+            repository.AddAsync(new User("duplicate-user", "HASH2", UserRole.Admin)));
     }
 }

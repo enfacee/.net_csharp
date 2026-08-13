@@ -1,7 +1,5 @@
-using EventApi.Domain.Entities;
-using EventApi.Infrastructure.Persistence;
-using EventApi.Infrastructure.Persistence.Repositories;
-using Microsoft.EntityFrameworkCore;
+using EventApi.Bookings.Domain.Entities;
+using EventApi.Bookings.Infrastructure.Persistence.Repositories;
 
 namespace EventApi.IntegrationTests;
 
@@ -10,7 +8,7 @@ public sealed class BookingRepositoryTests(PostgreSqlContainerFixture fixture) :
 {
     public async Task InitializeAsync()
     {
-        await fixture.ResetDatabaseAsync();
+        await fixture.ResetBookingsDatabaseAsync();
     }
 
     public Task DisposeAsync()
@@ -19,54 +17,48 @@ public sealed class BookingRepositoryTests(PostgreSqlContainerFixture fixture) :
     }
 
     [Fact]
-    public async Task AddAsync_UnitOfWorkSaveChangesAsync_GetByIdAsync_AndExistsAsync_ShouldPersistBookingWithDatabaseGeneratedId()
+    public async Task AddAsync_AndGetByIdAsync_ShouldPersistBookingWithDatabaseGeneratedId()
     {
-        var @event = await SeedEventAsync();
-        var user = await SeedUserAsync();
-        await using var context = fixture.CreateContext();
+        await using var context = fixture.CreateBookingsContext();
         var repository = new BookingRepository(context);
-        var unitOfWork = new EfUnitOfWork(context);
-        var booking = CreateBooking(@event.Id, user.Id);
+        var booking = CreateBooking(eventId: 999, userId: 123);
 
         await repository.AddAsync(booking);
-        await unitOfWork.SaveChangesAsync();
 
         Assert.True(booking.Id > 0);
-        Assert.True(await repository.ExistsAsync(booking.Id));
-        Assert.False(await repository.ExistsAsync(booking.Id + 1));
 
         var result = await repository.GetByIdAsync(booking.Id);
         Assert.NotNull(result);
-        Assert.Equal(@event.Id, result.EventId);
-        Assert.Equal(user.Id, result.UserId);
+        Assert.Equal(999, result.EventId);
+        Assert.Equal(123, result.UserId);
         Assert.Equal(BookingStatus.Pending, result.Status);
     }
 
     [Fact]
-    public async Task AddAsync_ShouldUseDatabaseForeignKey()
+    public async Task AddAsync_ShouldNotRequireForeignKeysToOtherServiceDatabases()
     {
-        var user = await SeedUserAsync();
-        await using var context = fixture.CreateContext();
+        await using var context = fixture.CreateBookingsContext();
         var repository = new BookingRepository(context);
-        var unitOfWork = new EfUnitOfWork(context);
+        var booking = CreateBooking(eventId: 999999, userId: 888888);
 
-        await repository.AddAsync(CreateBooking(eventId: 999999, user.Id));
+        await repository.AddAsync(booking);
 
-        await Assert.ThrowsAsync<DbUpdateException>(() => unitOfWork.SaveChangesAsync());
+        var result = await repository.GetByIdAsync(booking.Id);
+        Assert.NotNull(result);
+        Assert.Equal(999999, result.EventId);
+        Assert.Equal(888888, result.UserId);
     }
 
     [Fact]
     public async Task GetPendingBookingsAsync_ShouldReturnOnlyPendingBookingsOrderedById()
     {
-        var @event = await SeedEventAsync(totalSeats: 3);
-        var user = await SeedUserAsync();
-        var pending1 = CreateBooking(@event.Id, user.Id);
-        var confirmed = CreateBooking(@event.Id, user.Id);
+        var pending1 = CreateBooking(1, 1);
+        var confirmed = CreateBooking(1, 1);
         confirmed.Confirm(ProcessedAt);
-        var pending2 = CreateBooking(@event.Id, user.Id);
+        var pending2 = CreateBooking(1, 1);
         await SeedBookingsAsync(pending1, confirmed, pending2);
 
-        await using var context = fixture.CreateContext();
+        await using var context = fixture.CreateBookingsContext();
         var repository = new BookingRepository(context);
 
         var result = await repository.GetPendingBookingsAsync();
@@ -78,15 +70,13 @@ public sealed class BookingRepositoryTests(PostgreSqlContainerFixture fixture) :
     [Fact]
     public async Task GetPendingBookingIdsAsync_ShouldReturnOnlyPendingBookingIdsOrderedById()
     {
-        var @event = await SeedEventAsync(totalSeats: 3);
-        var user = await SeedUserAsync();
-        var pending1 = CreateBooking(@event.Id, user.Id);
-        var rejected = CreateBooking(@event.Id, user.Id);
+        var pending1 = CreateBooking(1, 1);
+        var rejected = CreateBooking(1, 1);
         rejected.Reject(ProcessedAt);
-        var pending2 = CreateBooking(@event.Id, user.Id);
+        var pending2 = CreateBooking(1, 1);
         await SeedBookingsAsync(pending1, rejected, pending2);
 
-        await using var context = fixture.CreateContext();
+        await using var context = fixture.CreateBookingsContext();
         var repository = new BookingRepository(context);
 
         var result = await repository.GetPendingBookingIdsAsync();
@@ -95,23 +85,20 @@ public sealed class BookingRepositoryTests(PostgreSqlContainerFixture fixture) :
     }
 
     [Fact]
-    public async Task UnitOfWorkSaveChangesAsync_ShouldPersistTrackedBookingChanges()
+    public async Task SaveChangesAsync_ShouldPersistTrackedBookingChanges()
     {
-        var @event = await SeedEventAsync();
-        var user = await SeedUserAsync();
-        var booking = CreateBooking(@event.Id, user.Id);
+        var booking = CreateBooking(1, 1);
         await SeedBookingsAsync(booking);
 
-        await using var context = fixture.CreateContext();
+        await using var context = fixture.CreateBookingsContext();
         var repository = new BookingRepository(context);
-        var unitOfWork = new EfUnitOfWork(context);
         var persistedBooking = await repository.GetByIdAsync(booking.Id);
         Assert.NotNull(persistedBooking);
 
         persistedBooking.Confirm(ProcessedAt);
-        await unitOfWork.SaveChangesAsync();
+        await repository.SaveChangesAsync();
 
-        await using var assertContext = fixture.CreateContext();
+        await using var assertContext = fixture.CreateBookingsContext();
         var result = await new BookingRepository(assertContext).GetByIdAsync(booking.Id);
         Assert.Equal(BookingStatus.Confirmed, result!.Status);
         Assert.NotNull(result.ProcessedAt);
@@ -120,75 +107,31 @@ public sealed class BookingRepositoryTests(PostgreSqlContainerFixture fixture) :
     [Fact]
     public async Task CountActiveByUserIdAsync_ShouldCountOnlyPendingAndConfirmedBookingsForUser()
     {
-        var @event = await SeedEventAsync(totalSeats: 5);
-        var user = await SeedUserAsync("active-count-user");
-        var otherUser = await SeedUserAsync("other-active-count-user");
-        var pending = CreateBooking(@event.Id, user.Id);
-        var confirmed = CreateBooking(@event.Id, user.Id);
+        var pending = CreateBooking(1, 10);
+        var confirmed = CreateBooking(2, 10);
         confirmed.Confirm(ProcessedAt);
-        var rejected = CreateBooking(@event.Id, user.Id);
+        var rejected = CreateBooking(3, 10);
         rejected.Reject(ProcessedAt);
-        var otherUserBooking = CreateBooking(@event.Id, otherUser.Id);
+        var otherUserBooking = CreateBooking(4, 20);
         await SeedBookingsAsync(pending, confirmed, rejected, otherUserBooking);
 
-        await using var context = fixture.CreateContext();
+        await using var context = fixture.CreateBookingsContext();
         var repository = new BookingRepository(context);
 
-        var result = await repository.CountActiveByUserIdAsync(user.Id);
+        var result = await repository.CountActiveByUserIdAsync(10);
 
         Assert.Equal(2, result);
     }
 
-    [Fact]
-    public async Task GetByIdAsync_ShouldReturnNullForMissingBooking()
-    {
-        await using var context = fixture.CreateContext();
-        var repository = new BookingRepository(context);
-
-        var result = await repository.GetByIdAsync(999999);
-
-        Assert.Null(result);
-    }
-
-    private async Task<Event> SeedEventAsync(int totalSeats = 10)
-    {
-        await using var context = fixture.CreateContext();
-        var repository = new EventRepository(context);
-        var unitOfWork = new EfUnitOfWork(context);
-        var startAt = new DateTime(2026, 5, 10, 10, 0, 0, DateTimeKind.Utc);
-        var @event = new Event("Repository test event", null, startAt, startAt.AddHours(1), totalSeats);
-
-        await repository.AddAsync(@event);
-        await unitOfWork.SaveChangesAsync();
-
-        return @event;
-    }
-
     private async Task SeedBookingsAsync(params Booking[] bookings)
     {
-        await using var context = fixture.CreateContext();
+        await using var context = fixture.CreateBookingsContext();
         var repository = new BookingRepository(context);
-        var unitOfWork = new EfUnitOfWork(context);
 
         foreach (var booking in bookings)
         {
             await repository.AddAsync(booking);
         }
-
-        await unitOfWork.SaveChangesAsync();
-    }
-
-    private async Task<User> SeedUserAsync(string login = "repository-user")
-    {
-        await using var context = fixture.CreateContext();
-        var repository = new UserRepository(context);
-        var unitOfWork = new EfUnitOfWork(context);
-        var user = new User(login, "HASH", UserRole.User);
-
-        await repository.AddAsync(user);
-        await unitOfWork.SaveChangesAsync();
-
-        return user;
     }
 
     private static Booking CreateBooking(int eventId, int userId)

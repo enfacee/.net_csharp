@@ -1,4 +1,6 @@
-using EventApi.Infrastructure.Persistence;
+using EventApi.Bookings.Infrastructure.Persistence;
+using EventApi.Events.Infrastructure.Persistence;
+using EventApi.Users.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Testcontainers.PostgreSql;
 
@@ -22,18 +24,50 @@ public sealed class PostgreSqlContainerFixture : IAsyncLifetime
         await container.DisposeAsync();
     }
 
-    public AppDbContext CreateContext()
+    public UsersDbContext CreateUsersContext()
     {
-        var options = new DbContextOptionsBuilder<AppDbContext>()
+        var options = new DbContextOptionsBuilder<UsersDbContext>()
             .UseNpgsql(container.GetConnectionString())
             .Options;
 
-        return new AppDbContext(options);
+        return new UsersDbContext(options);
     }
 
-    public async Task ResetDatabaseAsync()
+    public EventsDbContext CreateEventsContext()
     {
-        await using var context = CreateContext();
+        var options = new DbContextOptionsBuilder<EventsDbContext>()
+            .UseNpgsql(container.GetConnectionString())
+            .Options;
+
+        return new EventsDbContext(options);
+    }
+
+    public BookingsDbContext CreateBookingsContext()
+    {
+        var options = new DbContextOptionsBuilder<BookingsDbContext>()
+            .UseNpgsql(container.GetConnectionString())
+            .Options;
+
+        return new BookingsDbContext(options);
+    }
+
+    public async Task ResetUsersDatabaseAsync()
+    {
+        await using var context = CreateUsersContext();
+        await context.Database.EnsureDeletedAsync();
+        await context.Database.MigrateAsync();
+    }
+
+    public async Task ResetEventsDatabaseAsync()
+    {
+        await using var context = CreateEventsContext();
+        await context.Database.EnsureDeletedAsync();
+        await context.Database.MigrateAsync();
+    }
+
+    public async Task ResetBookingsDatabaseAsync()
+    {
+        await using var context = CreateBookingsContext();
         await context.Database.EnsureDeletedAsync();
         await context.Database.MigrateAsync();
     }
