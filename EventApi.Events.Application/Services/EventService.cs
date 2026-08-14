@@ -7,7 +7,8 @@ using EventApi.Events.Domain.Exceptions;
 namespace EventApi.Events.Application.Services;
 
 public class EventService(
-    IEventRepository eventRepository) : IEventService
+    IEventRepository eventRepository,
+    IEventReadCache readCache) : IEventService
 {
     public async Task<Event> CreateEventAsync(
         string title,
@@ -43,7 +44,29 @@ public class EventService(
 
     public async Task<Event?> GetByIdAsync(int id, CancellationToken cancellationToken = default)
     {
-        return await eventRepository.GetByIdAsync(id, cancellationToken);
+        var cachedEvent = await readCache.GetEventAsync(id, cancellationToken);
+        if (cachedEvent is not null)
+            return cachedEvent;
+
+        var @event = await eventRepository.GetByIdAsync(id, cancellationToken);
+        if (@event is null)
+            return null;
+
+        await readCache.SetEventAsync(@event, cancellationToken);
+
+        return @event;
+    }
+
+    public async Task<IReadOnlyCollection<Event>> GetTopAsync(CancellationToken cancellationToken = default)
+    {
+        var cachedEvents = await readCache.GetTopEventsAsync(cancellationToken);
+        if (cachedEvents is not null)
+            return cachedEvents;
+
+        var events = await eventRepository.GetTopBySoldPercentageAsync(10, cancellationToken);
+        await readCache.SetTopEventsAsync(events, cancellationToken);
+
+        return events;
     }
 
     public async Task<bool> RemoveAsync(int id, CancellationToken cancellationToken = default)

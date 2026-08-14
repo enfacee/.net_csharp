@@ -1,5 +1,6 @@
 using EventApi.Events.Application.Abstractions;
 using EventApi.Events.Application.Options;
+using EventApi.Events.Infrastructure.Caching;
 using EventApi.Events.Infrastructure.Messaging;
 using EventApi.Events.Infrastructure.Persistence;
 using EventApi.Events.Infrastructure.Persistence.Repositories;
@@ -34,6 +35,7 @@ public static class DependencyInjection
 
             return ConnectionMultiplexer.Connect(configurationOptions);
         });
+        services.AddSingleton<IEventCache, RedisEventCache>();
         services.AddSingleton<IEventSeatReservationPublisher, KafkaEventSeatReservationPublisher>();
         services.AddHostedService<KafkaTopicInitializerHostedService>();
         services.AddHostedService<BookingCreatedConsumerBackgroundService>();

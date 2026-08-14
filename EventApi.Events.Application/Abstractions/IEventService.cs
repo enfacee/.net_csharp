@@ -23,6 +23,7 @@ public interface IEventService
         CancellationToken cancellationToken = default);
 
     Task<Event?> GetByIdAsync(int id, CancellationToken cancellationToken = default);
+    Task<IReadOnlyCollection<Event>> GetTopAsync(CancellationToken cancellationToken = default);
     Task<bool> RemoveAsync(int id, CancellationToken cancellationToken = default);
     Task<bool> UpdateEventAsync(int id, EventRequest request, CancellationToken cancellationToken = default);
     Task<bool> ReserveSeatsAsync(int id, int seats, CancellationToken cancellationToken = default);

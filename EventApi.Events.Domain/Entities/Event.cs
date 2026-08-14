@@ -37,6 +37,35 @@ public class Event
         return new Event(title, description, startAt, endAt, totalSeats);
     }
 
+    public static Event Rehydrate(
+        int id,
+        string title,
+        string? description,
+        DateTime startAt,
+        DateTime endAt,
+        int totalSeats,
+        int availableSeats)
+    {
+        Validate(title, startAt, endAt, totalSeats);
+
+        if (id <= 0)
+            throw new ArgumentOutOfRangeException(nameof(id), "Id must be greater than 0.");
+
+        if (availableSeats < 0 || availableSeats > totalSeats)
+            throw new ArgumentOutOfRangeException(nameof(availableSeats), "AvailableSeats must be between 0 and TotalSeats.");
+
+        return new Event
+        {
+            Id = id,
+            Title = title,
+            Description = description,
+            StartAt = startAt,
+            EndAt = endAt,
+            TotalSeats = totalSeats,
+            AvailableSeats = availableSeats
+        };
+    }
+
     public void UpdateDetails(
         string title,
         string? description,

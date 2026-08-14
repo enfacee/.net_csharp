@@ -1,4 +1,5 @@
 using EventApi.Events.Application.Abstractions;
+using EventApi.Events.Application.Caching;
 using EventApi.Events.Application.Options;
 using EventApi.Events.Application.Services;
 using EventApi.Events.Application.Security;
@@ -15,6 +16,7 @@ public static class DependencyInjection
         IConfiguration configuration)
     {
         services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<IEventReadCache, EventReadCache>();
         services.AddScoped<IEventService, EventService>();
         services.AddScoped<IEventSeatReservationService, EventSeatReservationService>();
         services.AddOptions<JwtOptions>()
@@ -35,6 +37,11 @@ public static class DependencyInjection
         services.AddOptions<RedisOptions>()
             .Bind(configuration.GetSection(RedisOptions.SectionName))
             .Validate(options => !string.IsNullOrWhiteSpace(options.ConnectionString), "Redis:ConnectionString is not configured.")
+            .ValidateOnStart();
+        services.AddOptions<EventCacheOptions>()
+            .Bind(configuration.GetSection(EventCacheOptions.SectionName))
+            .Validate(options => options.EventByIdTtlSeconds > 0, "EventCache:EventByIdTtlSeconds must be greater than 0.")
+            .Validate(options => options.TopEventsTtlSeconds > 0, "EventCache:TopEventsTtlSeconds must be greater than 0.")
             .ValidateOnStart();
 
         return services;
