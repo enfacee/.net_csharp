@@ -79,6 +79,25 @@ public sealed class EventRepositoryTests(PostgreSqlContainerFixture fixture) : I
     }
 
     [Fact]
+    public async Task GetTopBySoldPercentageAsync_ShouldReturnEventsOrderedBySoldPercentage()
+    {
+        var low = CreateEvent("Low sold", totalSeats: 10);
+        low.TryReserveSeats(1);
+        var high = CreateEvent("High sold", totalSeats: 10);
+        high.TryReserveSeats(8);
+        var medium = CreateEvent("Medium sold", totalSeats: 10);
+        medium.TryReserveSeats(5);
+        await SeedEventsAsync(low, high, medium);
+
+        await using var context = fixture.CreateEventsContext();
+        var repository = new EventRepository(context);
+
+        var result = await repository.GetTopBySoldPercentageAsync(2);
+
+        Assert.Equal(["High sold", "Medium sold"], result.Select(@event => @event.Title).ToArray());
+    }
+
+    [Fact]
     public async Task RemoveAsync_ShouldRemoveExistingEventAndReturnFalseForMissingEvent()
     {
         var @event = await SeedEventAsync(CreateEvent("To remove"));

@@ -13,13 +13,14 @@
 4. Запустите тесты:
    - `dotnet test EventApi.sln`
 
-Compose поднимает Zookeeper, Kafka, три PostgreSQL-базы и три API-сервиса. Для локального доступа к базам используются порты:
+Compose поднимает Zookeeper, Kafka, Redis, три PostgreSQL-базы и три API-сервиса. Для локального доступа к инфраструктуре используются порты:
 
 - Users DB: `localhost:5433`
 - Events DB: `localhost:5434`
 - Bookings DB: `localhost:5435`
 - Kafka: `localhost:9092`
 - Kafka UI: `http://localhost:8085`
+- Redis: `localhost:6379`
 
 Основной вариант для текущего задания — сервисы `EventApi.Users`, `EventApi.Events` и `EventApi.Bookings`.
 
@@ -94,6 +95,8 @@ JWT-токен выдаёт только Users/Auth service через `POST /au
 ## Кеширование Events
 
 Redis подключён только к Events service. Application работает через абстракции `IEventCache` и `IEventReadCache`, а конкретная Redis-реализация находится в Infrastructure.
+
+Параметры Redis задаются в `EventApi.Events/appsettings.json` и переопределяются в Docker через переменные окружения. Внутри Docker-сети Events service подключается к `redis:6379`, а при локальном запуске можно использовать `localhost:6379`.
 
 Кешируются два read-сценария:
 
