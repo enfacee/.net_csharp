@@ -1,10 +1,13 @@
 using EventApi.Events.Application.Abstractions;
+using EventApi.Events.Application.Options;
 using EventApi.Events.Infrastructure.Messaging;
 using EventApi.Events.Infrastructure.Persistence;
 using EventApi.Events.Infrastructure.Persistence.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using StackExchange.Redis;
 
 namespace EventApi.Events.Infrastructure;
 
@@ -23,6 +26,14 @@ public static class DependencyInjection
             options.UseNpgsql(connectionString));
 
         services.AddScoped<IEventRepository, EventRepository>();
+        services.AddSingleton<IConnectionMultiplexer>(serviceProvider =>
+        {
+            var redisOptions = serviceProvider.GetRequiredService<IOptions<RedisOptions>>().Value;
+            var configurationOptions = ConfigurationOptions.Parse(redisOptions.ConnectionString);
+            configurationOptions.AbortOnConnectFail = false;
+
+            return ConnectionMultiplexer.Connect(configurationOptions);
+        });
         services.AddSingleton<IEventSeatReservationPublisher, KafkaEventSeatReservationPublisher>();
         services.AddHostedService<KafkaTopicInitializerHostedService>();
         services.AddHostedService<BookingCreatedConsumerBackgroundService>();
