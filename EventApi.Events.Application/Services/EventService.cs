@@ -74,6 +74,7 @@ public class EventService(
         if (!await eventRepository.RemoveAsync(id, cancellationToken))
             return false;
 
+        await readCache.RemoveEventAsync(id, cancellationToken);
         return true;
     }
 
@@ -94,6 +95,7 @@ public class EventService(
             request.TotalSeats!.Value);
 
         await eventRepository.SaveChangesAsync(cancellationToken);
+        await readCache.RemoveEventAsync(id, cancellationToken);
         return true;
     }
 
@@ -107,6 +109,7 @@ public class EventService(
             throw new NoAvailableSeatsException("No available seats for this event");
 
         await eventRepository.SaveChangesAsync(cancellationToken);
+        await readCache.RemoveEventAsync(id, cancellationToken);
         return true;
     }
 }
