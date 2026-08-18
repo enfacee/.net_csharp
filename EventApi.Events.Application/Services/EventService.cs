@@ -1,4 +1,6 @@
+using System.Collections.Concurrent;
 using EventApi.Events.Application.Abstractions;
+using EventApi.Events.Application.Caching;
 using EventApi.Events.Application.Common;
 using EventApi.Events.Application.DTO;
 using EventApi.Events.Domain.Entities;
@@ -10,6 +12,8 @@ public class EventService(
     IEventRepository eventRepository,
     IEventReadCache readCache) : IEventService
 {
+    private static readonly ConcurrentDictionary<string, SemaphoreSlim> CacheMissLocks = new();
+
     public async Task<Event> CreateEventAsync(
         string title,
         string? description,
@@ -22,6 +26,7 @@ public class EventService(
 
         await eventRepository.AddAsync(@event, cancellationToken);
 
+        // Top-events cache intentionally lives by TTL and is not invalidated on event creation.
         return @event;
     }
 
@@ -48,13 +53,22 @@ public class EventService(
         if (cachedEvent is not null)
             return cachedEvent;
 
-        var @event = await eventRepository.GetByIdAsync(id, cancellationToken);
-        if (@event is null)
-            return null;
+        return await ExecuteSingleFlightAsync(
+            EventCacheKeys.EventById(id),
+            async () =>
+            {
+                cachedEvent = await readCache.GetEventAsync(id, cancellationToken);
+                if (cachedEvent is not null)
+                    return cachedEvent;
 
-        await readCache.SetEventAsync(@event, cancellationToken);
+                var @event = await eventRepository.GetByIdAsync(id, cancellationToken);
+                if (@event is null)
+                    return null;
 
-        return @event;
+                await readCache.SetEventAsync(@event, cancellationToken);
+                return @event;
+            },
+            cancellationToken);
     }
 
     public async Task<IReadOnlyCollection<Event>> GetTopAsync(CancellationToken cancellationToken = default)
@@ -63,10 +77,19 @@ public class EventService(
         if (cachedEvents is not null)
             return cachedEvents;
 
-        var events = await eventRepository.GetTopBySoldPercentageAsync(10, cancellationToken);
-        await readCache.SetTopEventsAsync(events, cancellationToken);
+        return await ExecuteSingleFlightAsync(
+            EventCacheKeys.TopEvents,
+            async () =>
+            {
+                cachedEvents = await readCache.GetTopEventsAsync(cancellationToken);
+                if (cachedEvents is not null)
+                    return cachedEvents;
 
-        return events;
+                var events = await eventRepository.GetTopBySoldPercentageAsync(10, cancellationToken);
+                await readCache.SetTopEventsAsync(events, cancellationToken);
+                return events;
+            },
+            cancellationToken);
     }
 
     public async Task<bool> RemoveAsync(int id, CancellationToken cancellationToken = default)
@@ -111,5 +134,23 @@ public class EventService(
         await eventRepository.SaveChangesAsync(cancellationToken);
         await readCache.RemoveEventAsync(id, cancellationToken);
         return true;
+    }
+
+    private static async Task<T> ExecuteSingleFlightAsync<T>(
+        string key,
+        Func<Task<T>> factory,
+        CancellationToken cancellationToken)
+    {
+        var semaphore = CacheMissLocks.GetOrAdd(key, _ => new SemaphoreSlim(1, 1));
+        await semaphore.WaitAsync(cancellationToken);
+
+        try
+        {
+            return await factory();
+        }
+        finally
+        {
+            semaphore.Release();
+        }
     }
 }

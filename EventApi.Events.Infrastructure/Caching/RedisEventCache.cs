@@ -8,13 +8,15 @@ public sealed class RedisEventCache(
     IConnectionMultiplexer connection,
     ILogger<RedisEventCache> logger) : IEventCache
 {
+    private readonly IDatabase database = connection.GetDatabase();
+
     public async Task<string?> GetStringAsync(string key, CancellationToken cancellationToken = default)
     {
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var value = await connection.GetDatabase().StringGetAsync(key);
+            var value = await database.StringGetAsync(key);
             return value.HasValue ? value.ToString() : null;
         }
         catch (OperationCanceledException)
@@ -38,7 +40,7 @@ public sealed class RedisEventCache(
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            await connection.GetDatabase().StringSetAsync(key, value, timeToLive);
+            await database.StringSetAsync(key, value, timeToLive);
         }
         catch (OperationCanceledException)
         {
@@ -56,7 +58,7 @@ public sealed class RedisEventCache(
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            await connection.GetDatabase().KeyDeleteAsync(key);
+            await database.KeyDeleteAsync(key);
         }
         catch (OperationCanceledException)
         {

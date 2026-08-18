@@ -1,3 +1,4 @@
+using System.Collections.Concurrent;
 using EventApi.Events.Application.Abstractions;
 using EventApi.Events.Application.Common;
 using EventApi.Events.Application.DTO;
@@ -9,6 +10,8 @@ namespace EventApi.Tests;
 
 public sealed class EventServiceCacheTests
 {
+    private static readonly DateTime TestNow = new(2030, 1, 1, 10, 0, 0, DateTimeKind.Utc);
+
     [Fact]
     public async Task GetByIdAsync_ShouldNotCallRepository_WhenCacheContainsEvent()
     {
@@ -38,11 +41,35 @@ public sealed class EventServiceCacheTests
         var result = await service.GetByIdAsync(@event.Id);
 
         result.Should().BeSameAs(@event);
-        cache.GetEventCalls.Should().Be(1);
+        cache.GetEventCalls.Should().Be(2);
         repository.GetByIdCalls.Should().Be(1);
         cache.SetEventCalls.Should().Be(1);
         cache.SavedEvents.Should().ContainSingle(x => x.Id == @event.Id);
-        operations.Should().Equal($"cache:get:{@event.Id}", $"repo:get:{@event.Id}", $"cache:set:{@event.Id}");
+        operations.Should().Equal(
+            $"cache:get:{@event.Id}",
+            $"cache:get:{@event.Id}",
+            $"repo:get:{@event.Id}",
+            $"cache:set:{@event.Id}");
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_ShouldUseSingleFlight_WhenManyRequestsMissSameKey()
+    {
+        var @event = CreateEvent(id: 1, title: "Concurrent repository event");
+        var repository = new FakeEventRepository
+        {
+            EventById = @event,
+            Delay = TimeSpan.FromMilliseconds(50)
+        };
+        var cache = new FakeEventReadCache();
+        var service = new EventService(repository, cache);
+
+        var results = await Task.WhenAll(
+            Enumerable.Range(0, 20).Select(_ => service.GetByIdAsync(@event.Id)));
+
+        results.Should().OnlyContain(result => ReferenceEquals(result, @event));
+        repository.GetByIdCalls.Should().Be(1);
+        cache.SetEventCalls.Should().Be(1);
     }
 
     [Fact]
@@ -73,12 +100,32 @@ public sealed class EventServiceCacheTests
         var result = await service.GetTopAsync();
 
         result.Should().BeSameAs(topEvents);
-        cache.GetTopEventsCalls.Should().Be(1);
+        cache.GetTopEventsCalls.Should().Be(2);
         repository.GetTopCalls.Should().Be(1);
         repository.LastTopCount.Should().Be(10);
         cache.SetTopEventsCalls.Should().Be(1);
         cache.SavedTopEvents.Should().BeSameAs(topEvents);
-        operations.Should().Equal("cache:get-top", "repo:get-top:10", "cache:set-top");
+        operations.Should().Equal("cache:get-top", "cache:get-top", "repo:get-top:10", "cache:set-top");
+    }
+
+    [Fact]
+    public async Task GetTopAsync_ShouldUseSingleFlight_WhenManyRequestsMissSameKey()
+    {
+        var topEvents = new[] { CreateEvent(id: 1, title: "Concurrent top event") };
+        var repository = new FakeEventRepository
+        {
+            TopEvents = topEvents,
+            Delay = TimeSpan.FromMilliseconds(50)
+        };
+        var cache = new FakeEventReadCache();
+        var service = new EventService(repository, cache);
+
+        var results = await Task.WhenAll(
+            Enumerable.Range(0, 20).Select(_ => service.GetTopAsync()));
+
+        results.Should().OnlyContain(result => ReferenceEquals(result, topEvents));
+        repository.GetTopCalls.Should().Be(1);
+        cache.SetTopEventsCalls.Should().Be(1);
     }
 
     [Fact]
@@ -150,7 +197,7 @@ public sealed class EventServiceCacheTests
         int totalSeats = 10,
         int availableSeats = 10)
     {
-        var startAt = DateTime.UtcNow.AddDays(30);
+        var startAt = TestNow.AddDays(30);
 
         return Event.Rehydrate(
             id,
@@ -167,11 +214,16 @@ public sealed class EventServiceCacheTests
         public Event? EventById { get; init; }
         public IReadOnlyCollection<Event> TopEvents { get; init; } = [];
         public bool RemoveResult { get; init; }
-        public int GetByIdCalls { get; private set; }
-        public int GetTopCalls { get; private set; }
+        private int getByIdCalls;
+        private int getTopCalls;
+        private int removeCalls;
+        private int saveChangesCalls;
+        public TimeSpan Delay { get; init; }
+        public int GetByIdCalls => getByIdCalls;
+        public int GetTopCalls => getTopCalls;
         public int LastTopCount { get; private set; }
-        public int RemoveCalls { get; private set; }
-        public int SaveChangesCalls { get; private set; }
+        public int RemoveCalls => removeCalls;
+        public int SaveChangesCalls => saveChangesCalls;
 
         public Task AddAsync(Event @event, CancellationToken cancellationToken = default)
         {
@@ -191,8 +243,11 @@ public sealed class EventServiceCacheTests
 
         public Task<Event?> GetByIdAsync(int id, CancellationToken cancellationToken = default)
         {
-            GetByIdCalls++;
+            Interlocked.Increment(ref getByIdCalls);
             operations?.Add($"repo:get:{id}");
+            if (Delay > TimeSpan.Zero)
+                return GetByIdWithDelayAsync(id, cancellationToken);
+
             return Task.FromResult(EventById?.Id == id ? EventById : null);
         }
 
@@ -200,9 +255,12 @@ public sealed class EventServiceCacheTests
             int count,
             CancellationToken cancellationToken = default)
         {
-            GetTopCalls++;
+            Interlocked.Increment(ref getTopCalls);
             LastTopCount = count;
             operations?.Add($"repo:get-top:{count}");
+            if (Delay > TimeSpan.Zero)
+                return GetTopWithDelayAsync(cancellationToken);
+
             return Task.FromResult(TopEvents);
         }
 
@@ -213,42 +271,60 @@ public sealed class EventServiceCacheTests
 
         public Task<bool> RemoveAsync(int id, CancellationToken cancellationToken = default)
         {
-            RemoveCalls++;
+            Interlocked.Increment(ref removeCalls);
             operations?.Add($"repo:remove:{id}");
             return Task.FromResult(RemoveResult);
         }
 
         public Task SaveChangesAsync(CancellationToken cancellationToken = default)
         {
-            SaveChangesCalls++;
+            Interlocked.Increment(ref saveChangesCalls);
             operations?.Add("repo:save");
             return Task.CompletedTask;
+        }
+
+        private async Task<Event?> GetByIdWithDelayAsync(int id, CancellationToken cancellationToken)
+        {
+            await Task.Delay(Delay, cancellationToken);
+            return EventById?.Id == id ? EventById : null;
+        }
+
+        private async Task<IReadOnlyCollection<Event>> GetTopWithDelayAsync(CancellationToken cancellationToken)
+        {
+            await Task.Delay(Delay, cancellationToken);
+            return TopEvents;
         }
     }
 
     private sealed class FakeEventReadCache(List<string>? operations = null) : IEventReadCache
     {
-        public Dictionary<int, Event> Events { get; } = [];
-        public IReadOnlyCollection<Event>? CachedTopEvents { get; init; }
+        public ConcurrentDictionary<int, Event> Events { get; } = [];
+        public IReadOnlyCollection<Event>? CachedTopEvents { get; set; }
         public List<Event> SavedEvents { get; } = [];
         public IReadOnlyCollection<Event>? SavedTopEvents { get; private set; }
         public List<int> RemovedEventIds { get; } = [];
-        public int GetEventCalls { get; private set; }
-        public int SetEventCalls { get; private set; }
-        public int RemoveEventCalls { get; private set; }
-        public int GetTopEventsCalls { get; private set; }
-        public int SetTopEventsCalls { get; private set; }
+        private int getEventCalls;
+        private int setEventCalls;
+        private int removeEventCalls;
+        private int getTopEventsCalls;
+        private int setTopEventsCalls;
+        public int GetEventCalls => getEventCalls;
+        public int SetEventCalls => setEventCalls;
+        public int RemoveEventCalls => removeEventCalls;
+        public int GetTopEventsCalls => getTopEventsCalls;
+        public int SetTopEventsCalls => setTopEventsCalls;
 
         public Task<Event?> GetEventAsync(int id, CancellationToken cancellationToken = default)
         {
-            GetEventCalls++;
+            Interlocked.Increment(ref getEventCalls);
             operations?.Add($"cache:get:{id}");
             return Task.FromResult(Events.GetValueOrDefault(id));
         }
 
         public Task SetEventAsync(Event @event, CancellationToken cancellationToken = default)
         {
-            SetEventCalls++;
+            Interlocked.Increment(ref setEventCalls);
+            Events[@event.Id] = @event;
             SavedEvents.Add(@event);
             operations?.Add($"cache:set:{@event.Id}");
             return Task.CompletedTask;
@@ -256,15 +332,16 @@ public sealed class EventServiceCacheTests
 
         public Task RemoveEventAsync(int id, CancellationToken cancellationToken = default)
         {
-            RemoveEventCalls++;
+            Interlocked.Increment(ref removeEventCalls);
             RemovedEventIds.Add(id);
+            Events.TryRemove(id, out _);
             operations?.Add($"cache:remove:{id}");
             return Task.CompletedTask;
         }
 
         public Task<IReadOnlyCollection<Event>?> GetTopEventsAsync(CancellationToken cancellationToken = default)
         {
-            GetTopEventsCalls++;
+            Interlocked.Increment(ref getTopEventsCalls);
             operations?.Add("cache:get-top");
             return Task.FromResult(CachedTopEvents);
         }
@@ -273,8 +350,9 @@ public sealed class EventServiceCacheTests
             IReadOnlyCollection<Event> events,
             CancellationToken cancellationToken = default)
         {
-            SetTopEventsCalls++;
+            Interlocked.Increment(ref setTopEventsCalls);
             SavedTopEvents = events;
+            CachedTopEvents = events;
             operations?.Add("cache:set-top");
             return Task.CompletedTask;
         }

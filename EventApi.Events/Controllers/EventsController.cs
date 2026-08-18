@@ -85,6 +85,6 @@ public class EventsController(IEventService eventService) : ControllerBase
         if (!await eventService.RemoveAsync(id))
             return NotFound();
 
-        return Ok();
+        return NoContent();
     }
 }
