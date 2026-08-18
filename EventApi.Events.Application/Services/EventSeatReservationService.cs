@@ -6,7 +6,8 @@ namespace EventApi.Events.Application.Services;
 public sealed class EventSeatReservationService(
     IEventRepository eventRepository,
     IEventSeatReservationPublisher publisher,
-    TimeProvider timeProvider) : IEventSeatReservationService
+    TimeProvider timeProvider,
+    IEventReadCache readCache) : IEventSeatReservationService
 {
     public async Task HandleBookingCreatedAsync(
         BookingCreated message,
@@ -34,6 +35,7 @@ public sealed class EventSeatReservationService(
         }
 
         await eventRepository.SaveChangesAsync(cancellationToken);
+        await readCache.RemoveEventAsync(message.EventId, cancellationToken);
         await publisher.PublishSeatReservedAsync(
             new EventSeatReserved(
                 message.BookingId,

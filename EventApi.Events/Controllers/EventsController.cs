@@ -30,6 +30,14 @@ public class EventsController(IEventService eventService) : ControllerBase
         });
     }
 
+    [HttpGet("top")]
+    public async Task<ActionResult<IReadOnlyCollection<EventResponse>>> GetTop(CancellationToken cancellationToken)
+    {
+        var events = await eventService.GetTopAsync(cancellationToken);
+
+        return Ok(events.Select(@event => @event.ToResponse()).ToArray());
+    }
+
     [HttpGet("{id}")]
     public async Task<ActionResult<EventResponse>> GetById(int id)
     {
@@ -77,6 +85,6 @@ public class EventsController(IEventService eventService) : ControllerBase
         if (!await eventService.RemoveAsync(id))
             return NotFound();
 
-        return Ok();
+        return NoContent();
     }
 }

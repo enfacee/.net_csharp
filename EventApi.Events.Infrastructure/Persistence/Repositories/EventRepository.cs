@@ -56,6 +56,17 @@ public class EventRepository(EventsDbContext context) : IEventRepository
         return await context.Events.FindAsync([id], cancellationToken);
     }
 
+    public async Task<IReadOnlyCollection<Event>> GetTopBySoldPercentageAsync(
+        int count,
+        CancellationToken cancellationToken = default)
+    {
+        return await context.Events
+            .OrderByDescending(@event => (double)(@event.TotalSeats - @event.AvailableSeats) / @event.TotalSeats)
+            .ThenBy(@event => @event.StartAt)
+            .Take(count)
+            .ToArrayAsync(cancellationToken);
+    }
+
     public async Task<bool> ExistsAsync(int id, CancellationToken cancellationToken = default)
     {
         return await context.Events.AnyAsync(@event => @event.Id == id, cancellationToken);

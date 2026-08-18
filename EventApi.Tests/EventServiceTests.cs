@@ -1,5 +1,7 @@
 using EventApi.Events.Application.Abstractions;
+using EventApi.Events.Application.Caching;
 using EventApi.Events.Application.DTO;
+using EventApi.Events.Application.Options;
 using EventApi.Events.Application.Services;
 using EventApi.Events.Domain.Entities;
 using EventApi.Events.Infrastructure.Persistence;
@@ -8,20 +10,31 @@ using EventApi.Shared.Contracts;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
+using Microsoft.Extensions.Time.Testing;
 
 namespace EventApi.Tests;
 
 public sealed class EventServiceTests : IDisposable
 {
     private readonly ServiceProvider _serviceProvider;
+    private readonly FakeEventCache _cache = new();
     private readonly FakeEventSeatReservationPublisher _publisher = new();
+    private readonly FakeTimeProvider _timeProvider = new(new DateTimeOffset(2030, 1, 1, 10, 0, 0, TimeSpan.Zero));
 
     public EventServiceTests()
     {
         var services = new ServiceCollection();
         services.AddDbContext<EventsDbContext>(options =>
             options.UseInMemoryDatabase(Guid.NewGuid().ToString()));
-        services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<TimeProvider>(_timeProvider);
+        services.AddSingleton<IEventCache>(_cache);
+        services.AddSingleton(Options.Create(new EventCacheOptions
+        {
+            EventByIdTtlSeconds = 60,
+            TopEventsTtlSeconds = 300
+        }));
+        services.AddSingleton<IEventReadCache, EventReadCache>();
         services.AddSingleton<IEventSeatReservationPublisher>(_publisher);
         services.AddScoped<IEventRepository, EventRepository>();
         services.AddScoped<IEventService, EventService>();
@@ -35,7 +48,7 @@ public sealed class EventServiceTests : IDisposable
     {
         using var scope = _serviceProvider.CreateScope();
         var service = scope.ServiceProvider.GetRequiredService<IEventService>();
-        var startAt = DateTime.UtcNow.AddDays(30);
+        var startAt = FutureDate();
 
         var @event = await service.CreateEventAsync(
             "Architecture review",
@@ -57,7 +70,7 @@ public sealed class EventServiceTests : IDisposable
     {
         using var scope = _serviceProvider.CreateScope();
         var service = scope.ServiceProvider.GetRequiredService<IEventService>();
-        var from = DateTime.UtcNow.AddDays(10);
+        var from = FutureDate(days: 10);
         var to = from.AddDays(2);
 
         await service.CreateEventAsync("Team sync", null, from, from.AddHours(1), 10);
@@ -74,11 +87,79 @@ public sealed class EventServiceTests : IDisposable
     }
 
     [Fact]
+    public async Task GetByIdAsync_ShouldReadFromCache_WhenCacheContainsEvent()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<IEventService>();
+        var cachedEvent = Event.Rehydrate(
+            id: 777,
+            title: "Cached event",
+            description: null,
+            startAt: FutureDate(),
+            endAt: FutureDate().AddHours(1),
+            totalSeats: 10,
+            availableSeats: 4);
+        await _cache.SetStringAsync(
+            EventCacheKeys.EventById(cachedEvent.Id),
+            System.Text.Json.JsonSerializer.Serialize(EventCacheItem.FromEvent(cachedEvent), new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web)),
+            TimeSpan.FromMinutes(1));
+        _cache.ResetCalls();
+
+        var result = await service.GetByIdAsync(cachedEvent.Id);
+
+        result.Should().NotBeNull();
+        result!.Title.Should().Be("Cached event");
+        _cache.GetCalls.Should().Be(1);
+        _cache.SetCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task GetByIdAsync_ShouldReadFromRepositoryAndSaveCache_WhenCacheMisses()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<IEventService>();
+        var startAt = FutureDate();
+        var @event = await service.CreateEventAsync("Cache miss event", null, startAt, startAt.AddHours(1), 10);
+        _cache.Clear();
+
+        var result = await service.GetByIdAsync(@event.Id);
+
+        result.Should().NotBeNull();
+        result!.Title.Should().Be("Cache miss event");
+        _cache.GetCalls.Should().Be(2);
+        _cache.SetCalls.Should().Be(1);
+        _cache.Values.Should().ContainKey(EventCacheKeys.EventById(@event.Id));
+    }
+
+    [Fact]
+    public async Task GetTopAsync_ShouldReturnTopTenEventsBySoldPercentageAndCacheResult()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<IEventService>();
+        var startAt = FutureDate();
+
+        for (var i = 0; i < 12; i++)
+        {
+            var @event = await service.CreateEventAsync($"Event {i}", null, startAt.AddDays(i), startAt.AddDays(i).AddHours(1), 10);
+            if (i > 0)
+                @event.TryReserveSeats(Math.Min(i, 10));
+        }
+        await scope.ServiceProvider.GetRequiredService<IEventRepository>().SaveChangesAsync();
+        _cache.Clear();
+
+        var result = await service.GetTopAsync();
+
+        result.Should().HaveCount(10);
+        result.First().AvailableSeats.Should().Be(0);
+        _cache.Values.Should().ContainKey(EventCacheKeys.TopEvents);
+    }
+
+    [Fact]
     public async Task UpdateEventAsync_ShouldKeepReservedSeats_WhenTotalSeatsChanges()
     {
         using var scope = _serviceProvider.CreateScope();
         var service = scope.ServiceProvider.GetRequiredService<IEventService>();
-        var startAt = DateTime.UtcNow.AddDays(30);
+        var startAt = FutureDate();
         var @event = await service.CreateEventAsync("Sprint planning", null, startAt, startAt.AddHours(1), 5);
         @event.TryReserveSeats(2);
 
@@ -100,6 +181,40 @@ public sealed class EventServiceTests : IDisposable
         result!.Title.Should().Be("Updated sprint planning");
         result.TotalSeats.Should().Be(7);
         result.AvailableSeats.Should().Be(5);
+        _cache.RemoveCalls.Should().Be(1);
+        _cache.RemovedKeys.Should().Contain(EventCacheKeys.EventById(@event.Id));
+    }
+
+    [Fact]
+    public async Task RemoveAsync_ShouldInvalidateEventCache_WhenEventExists()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<IEventService>();
+        var startAt = FutureDate();
+        var @event = await service.CreateEventAsync("To remove", null, startAt, startAt.AddHours(1), 5);
+        _cache.Clear();
+
+        var removed = await service.RemoveAsync(@event.Id);
+
+        removed.Should().BeTrue();
+        _cache.RemoveCalls.Should().Be(1);
+        _cache.RemovedKeys.Should().Contain(EventCacheKeys.EventById(@event.Id));
+    }
+
+    [Fact]
+    public async Task ReserveSeatsAsync_ShouldInvalidateEventCache_AfterSavingChanges()
+    {
+        using var scope = _serviceProvider.CreateScope();
+        var service = scope.ServiceProvider.GetRequiredService<IEventService>();
+        var startAt = FutureDate();
+        var @event = await service.CreateEventAsync("Reserve cache", null, startAt, startAt.AddHours(1), 5);
+        _cache.Clear();
+
+        var reserved = await service.ReserveSeatsAsync(@event.Id, 1);
+
+        reserved.Should().BeTrue();
+        _cache.RemoveCalls.Should().Be(1);
+        _cache.RemovedKeys.Should().Contain(EventCacheKeys.EventById(@event.Id));
     }
 
     [Fact]
@@ -108,13 +223,14 @@ public sealed class EventServiceTests : IDisposable
         using var scope = _serviceProvider.CreateScope();
         var eventService = scope.ServiceProvider.GetRequiredService<IEventService>();
         var reservationService = scope.ServiceProvider.GetRequiredService<IEventSeatReservationService>();
-        var startAt = DateTime.UtcNow.AddDays(30);
+        var startAt = FutureDate();
         var @event = await eventService.CreateEventAsync("Kafka event", null, startAt, startAt.AddHours(1), 2);
 
-        await reservationService.HandleBookingCreatedAsync(new BookingCreated(1, @event.Id, 10, 1, DateTime.UtcNow));
+        await reservationService.HandleBookingCreatedAsync(new BookingCreated(1, @event.Id, 10, 1, CurrentDate()));
 
         var result = await eventService.GetByIdAsync(@event.Id);
         result!.AvailableSeats.Should().Be(1);
+        _cache.RemovedKeys.Should().Contain(EventCacheKeys.EventById(@event.Id));
         _publisher.Reserved.Should().ContainSingle(message =>
             message.BookingId == 1 &&
             message.EventId == @event.Id &&
@@ -129,11 +245,11 @@ public sealed class EventServiceTests : IDisposable
         using var scope = _serviceProvider.CreateScope();
         var eventRepository = scope.ServiceProvider.GetRequiredService<IEventRepository>();
         var reservationService = scope.ServiceProvider.GetRequiredService<IEventSeatReservationService>();
-        var startAt = DateTime.UtcNow.AddHours(-2);
+        var startAt = CurrentDate().AddHours(-2);
         var @event = new Event("Started event", null, startAt, startAt.AddHours(1), 2);
         await eventRepository.AddAsync(@event);
 
-        await reservationService.HandleBookingCreatedAsync(new BookingCreated(1, @event.Id, 10, 1, DateTime.UtcNow));
+        await reservationService.HandleBookingCreatedAsync(new BookingCreated(1, @event.Id, 10, 1, CurrentDate()));
 
         _publisher.Reserved.Should().BeEmpty();
         _publisher.Unavailable.Should().ContainSingle(message =>
@@ -162,6 +278,16 @@ public sealed class EventServiceTests : IDisposable
         _serviceProvider.Dispose();
     }
 
+    private DateTime CurrentDate()
+    {
+        return _timeProvider.GetUtcNow().UtcDateTime;
+    }
+
+    private DateTime FutureDate(int days = 30)
+    {
+        return CurrentDate().AddDays(days);
+    }
+
     private sealed class FakeEventSeatReservationPublisher : IEventSeatReservationPublisher
     {
         public List<EventSeatReserved> Reserved { get; } = [];
@@ -177,6 +303,54 @@ public sealed class EventServiceTests : IDisposable
         {
             Unavailable.Add(message);
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class FakeEventCache : IEventCache
+    {
+        public Dictionary<string, string> Values { get; } = [];
+        public List<string> RemovedKeys { get; } = [];
+        public int GetCalls { get; private set; }
+        public int SetCalls { get; private set; }
+        public int RemoveCalls { get; private set; }
+
+        public Task<string?> GetStringAsync(string key, CancellationToken cancellationToken = default)
+        {
+            GetCalls++;
+            return Task.FromResult(Values.GetValueOrDefault(key));
+        }
+
+        public Task SetStringAsync(
+            string key,
+            string value,
+            TimeSpan timeToLive,
+            CancellationToken cancellationToken = default)
+        {
+            SetCalls++;
+            Values[key] = value;
+            return Task.CompletedTask;
+        }
+
+        public Task RemoveAsync(string key, CancellationToken cancellationToken = default)
+        {
+            RemoveCalls++;
+            RemovedKeys.Add(key);
+            Values.Remove(key);
+            return Task.CompletedTask;
+        }
+
+        public void Clear()
+        {
+            Values.Clear();
+            RemovedKeys.Clear();
+            ResetCalls();
+        }
+
+        public void ResetCalls()
+        {
+            GetCalls = 0;
+            SetCalls = 0;
+            RemoveCalls = 0;
         }
     }
 }

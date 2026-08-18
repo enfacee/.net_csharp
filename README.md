@@ -13,13 +13,14 @@
 4. Запустите тесты:
    - `dotnet test EventApi.sln`
 
-Compose поднимает Zookeeper, Kafka, три PostgreSQL-базы и три API-сервиса. Для локального доступа к базам используются порты:
+Compose поднимает Zookeeper, Kafka, Redis, три PostgreSQL-базы и три API-сервиса. Для локального доступа к инфраструктуре используются порты:
 
 - Users DB: `localhost:5433`
 - Events DB: `localhost:5434`
 - Bookings DB: `localhost:5435`
 - Kafka: `localhost:9092`
 - Kafka UI: `http://localhost:8085`
+- Redis: `localhost:6379`
 
 Основной вариант для текущего задания — сервисы `EventApi.Users`, `EventApi.Events` и `EventApi.Bookings`.
 
@@ -90,6 +91,23 @@ JWT-токен выдаёт только Users/Auth service через `POST /au
 - `Jwt:Audience`
 
 В Docker эти параметры передаются через переменные окружения в `docker-compose.yml`. Для production секрет должен быть заменён на безопасное значение и не должен храниться в git.
+
+## Кеширование Events
+
+Redis подключён только к Events service. Application работает через абстракции `IEventCache` и `IEventReadCache`, а конкретная Redis-реализация находится в Infrastructure.
+
+Параметры Redis задаются в `EventApi.Events/appsettings.json` и переопределяются в Docker через переменные окружения. Внутри Docker-сети Events service подключается к `redis:6379`, а при локальном запуске можно использовать `localhost:6379`.
+
+Кешируются два read-сценария:
+
+- `GET /events/{id}` — ключ `event:{id}`, TTL `EventCache:EventByIdTtlSeconds`.
+- `GET /events/top` — ключ `events:top10`, TTL `EventCache:TopEventsTtlSeconds`.
+
+Используется cache-aside: при чтении сервис сначала проверяет кеш, при промахе идёт в PostgreSQL и сохраняет результат в Redis. Если Redis недоступен, ошибка логируется в Infrastructure, но не пробрасывается клиенту; запрос продолжает работать через базу данных.
+
+Для отдельного события выбрана инвалидация при записи. После успешного изменения в PostgreSQL ключ `event:{id}` удаляется из кеша. Следующий читающий запрос заново загрузит актуальное событие из базы и прогреет кеш. Такой же порядок используется при изменении доступных мест из Kafka-обработчика: сначала сохраняется новое количество мест в БД, затем инвалидируется кеш события.
+
+Кеш `events:top10` явно не инвалидируется при каждом бронировании и живёт по TTL. Это агрегированный рейтинг, где небольшое устаревание допустимо, а инвалидация при каждом изменении мест была бы лишней нагрузкой.
 
 ## База данных и миграции
 

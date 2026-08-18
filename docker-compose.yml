@@ -50,6 +50,19 @@ services:
       KAFKA_CLUSTERS_0_NAME: eventapi-local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
 
+  redis:
+    image: redis:7.4-alpine
+    container_name: eventapi-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   users-db:
     image: postgres:16-alpine
     container_name: eventapi-users-db
@@ -130,6 +143,8 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      redis:
+        condition: service_healthy
     ports:
       - "5112:8080"
     environment:
@@ -142,6 +157,7 @@ services:
       Jwt__LifetimeMinutes: 60
       Kafka__BootstrapServers: kafka:29092
       Kafka__ConsumerGroup: events-service
+      Redis__ConnectionString: redis:6379,abortConnect=false
 
   bookings-api:
     build:
@@ -170,3 +186,4 @@ volumes:
   users-db-data:
   events-db-data:
   bookings-db-data:
+  redis-data:
