@@ -5,9 +5,15 @@ using EventApi.Users.Middleware;
 using OpenTelemetry.Metrics;
 using OpenTelemetry.Resources;
 using OpenTelemetry.Trace;
+using Serilog;
+using Serilog.Formatting.Compact;
 
 var builder = WebApplication.CreateBuilder(args);
 var configuration = builder.Configuration;
+
+builder.Host.UseSerilog((context, loggerConfiguration) =>
+    loggerConfiguration.ReadFrom.Configuration(context.Configuration)
+        .WriteTo.Console(new CompactJsonFormatter()));
 
 builder.Services.AddProblemDetails(options =>
 {
@@ -18,7 +24,7 @@ builder.Services.AddProblemDetails(options =>
 });
 builder.Services.AddSwaggerGen();
 builder.Services.AddOpenTelemetry()
-    .ConfigureResource(resource => resource.AddService(serviceName: "users-service"))
+    .ConfigureResource(resource => resource.AddService(serviceName: configuration["OpenTelemetry:ServiceName"]!))
     .WithTracing(tracing => tracing
         .AddAspNetCoreInstrumentation()
         .AddHttpClientInstrumentation()
