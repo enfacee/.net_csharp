@@ -464,7 +464,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(process_runtime_dotnet_gc_heap_size_bytes{job=\"events-service\"})",
+          "expr": "sum(dotnet_gc_last_collection_heap_size_bytes{job=\"events-service\"})",
           "legendFormat": "GC heap",
           "range": true,
           "refId": "A"
@@ -557,7 +557,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(process_runtime_dotnet_thread_pool_threads_count{job=\"events-service\"})",
+          "expr": "sum(dotnet_thread_pool_thread_count_total{job=\"events-service\"})",
           "legendFormat": "thread pool threads",
           "range": true,
           "refId": "A"
