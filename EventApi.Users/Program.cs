@@ -2,8 +2,18 @@ using System.Text.Json.Serialization;
 using EventApi.Users.Application;
 using EventApi.Users.Infrastructure;
 using EventApi.Users.Middleware;
+using OpenTelemetry.Metrics;
+using OpenTelemetry.Resources;
+using OpenTelemetry.Trace;
+using Serilog;
+using Serilog.Formatting.Compact;
 
 var builder = WebApplication.CreateBuilder(args);
+var configuration = builder.Configuration;
+
+builder.Host.UseSerilog((context, loggerConfiguration) =>
+    loggerConfiguration.ReadFrom.Configuration(context.Configuration)
+        .WriteTo.Console(new CompactJsonFormatter()));
 
 builder.Services.AddProblemDetails(options =>
 {
@@ -13,8 +23,19 @@ builder.Services.AddProblemDetails(options =>
     };
 });
 builder.Services.AddSwaggerGen();
-builder.Services.AddUsersApplicationServices(builder.Configuration);
-builder.Services.AddUsersInfrastructureServices(builder.Configuration);
+builder.Services.AddOpenTelemetry()
+    .ConfigureResource(resource => resource.AddService(serviceName: configuration["OpenTelemetry:ServiceName"]!))
+    .WithTracing(tracing => tracing
+        .AddAspNetCoreInstrumentation()
+        .AddHttpClientInstrumentation()
+        .AddEntityFrameworkCoreInstrumentation()
+        .AddOtlpExporter(options => options.Endpoint = new Uri(configuration["Otlp:Endpoint"]!)))
+    .WithMetrics(metrics => metrics
+        .AddAspNetCoreInstrumentation()
+        .AddRuntimeInstrumentation()
+        .AddPrometheusExporter());
+builder.Services.AddUsersApplicationServices(configuration);
+builder.Services.AddUsersInfrastructureServices(configuration);
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
@@ -27,6 +48,7 @@ app.Services.MigrateUsersDatabase();
 
 app.UseMiddleware<GlobalExceptionHandlingMiddleware>();
 app.MapControllers();
+app.MapPrometheusScrapingEndpoint();
 
 if (app.Environment.IsDevelopment())
 {

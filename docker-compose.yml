@@ -50,6 +50,36 @@ services:
       KAFKA_CLUSTERS_0_NAME: eventapi-local
       KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:29092
 
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    container_name: eventapi-prometheus
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090:9090"
+
+  jaeger:
+    image: jaegertracing/all-in-one:1.56
+    container_name: eventapi-jaeger
+    ports:
+      - "16686:16686"
+      - "4317:4317"
+    environment:
+      COLLECTOR_OTLP_ENABLED: "true"
+
+  grafana:
+    image: grafana/grafana:10.4.2
+    container_name: eventapi-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./grafana/provisioning/datasources:/etc/grafana/provisioning/datasources:ro
+      - ./grafana/provisioning/dashboards:/etc/grafana/provisioning/dashboards:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+
   redis:
     image: redis:7.4-alpine
     container_name: eventapi-redis
@@ -122,8 +152,14 @@ services:
     depends_on:
       users-db:
         condition: service_healthy
+      jaeger:
+        condition: service_started
     ports:
       - "5271:8080"
+    networks:
+      default:
+        aliases:
+          - users-service
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://+:8080
@@ -132,6 +168,7 @@ services:
       Jwt__Issuer: EventApi
       Jwt__Audience: EventApi
       Jwt__LifetimeMinutes: 60
+      Otlp__Endpoint: http://jaeger:4317
 
   events-api:
     build:
@@ -145,8 +182,14 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      jaeger:
+        condition: service_started
     ports:
       - "5112:8080"
+    networks:
+      default:
+        aliases:
+          - events-service
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://+:8080
@@ -158,6 +201,7 @@ services:
       Kafka__BootstrapServers: kafka:29092
       Kafka__ConsumerGroup: events-service
       Redis__ConnectionString: redis:6379,abortConnect=false
+      Otlp__Endpoint: http://jaeger:4317
 
   bookings-api:
     build:
@@ -169,8 +213,14 @@ services:
         condition: service_healthy
       kafka:
         condition: service_healthy
+      jaeger:
+        condition: service_started
     ports:
       - "5047:8080"
+    networks:
+      default:
+        aliases:
+          - bookings-service
     environment:
       ASPNETCORE_ENVIRONMENT: Development
       ASPNETCORE_URLS: http://+:8080
@@ -181,9 +231,11 @@ services:
       Jwt__LifetimeMinutes: 60
       Kafka__BootstrapServers: kafka:29092
       Kafka__ConsumerGroup: bookings-service
+      Otlp__Endpoint: http://jaeger:4317
 
 volumes:
   users-db-data:
   events-db-data:
   bookings-db-data:
   redis-data:
+  grafana-data:
